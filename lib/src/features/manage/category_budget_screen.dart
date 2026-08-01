@@ -150,18 +150,17 @@ class CategoryBudgetScreen extends ConsumerWidget {
     SpendingCategory category,
     int currentAmount,
   ) async {
-    final controller = TextEditingController(
-      text: currentAmount == 0 ? '' : '$currentAmount',
-    );
+    var amount = currentAmount == 0 ? '' : '$currentAmount';
     final result = await showDialog<int>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('${category.name} 예산'),
-        content: TextField(
-          controller: controller,
+        content: TextFormField(
+          initialValue: amount,
           autofocus: true,
           keyboardType: TextInputType.number,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          onChanged: (value) => amount = value,
           decoration: const InputDecoration(
             labelText: '예산 금액',
             suffixText: '원',
@@ -174,14 +173,13 @@ class CategoryBudgetScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () {
-              Navigator.pop(context, int.tryParse(controller.text.trim()) ?? 0);
+              Navigator.pop(context, int.tryParse(amount.trim()) ?? 0);
             },
             child: const Text('저장'),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (result != null) {
       await ref
           .read(financeRepositoryProvider)
@@ -194,7 +192,7 @@ class CategoryBudgetScreen extends ConsumerWidget {
     WidgetRef ref, [
     SpendingCategory? category,
   ]) async {
-    final controller = TextEditingController(text: category?.name ?? '');
+    var name = category?.name ?? '';
     var colorHex = category?.colorHex ?? _swatches.first;
     final result = await showDialog<(String, String)>(
       context: context,
@@ -205,10 +203,11 @@ class CategoryBudgetScreen extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextField(
-                controller: controller,
+              TextFormField(
+                initialValue: name,
                 autofocus: true,
                 maxLength: 20,
+                onChanged: (value) => name = value,
                 decoration: const InputDecoration(labelText: '이름'),
               ),
               const SizedBox(height: 12),
@@ -259,9 +258,9 @@ class CategoryBudgetScreen extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () {
-                final name = controller.text.trim();
-                if (name.isNotEmpty) {
-                  Navigator.pop(context, (name, colorHex));
+                final trimmedName = name.trim();
+                if (trimmedName.isNotEmpty) {
+                  Navigator.pop(context, (trimmedName, colorHex));
                 }
               },
               child: const Text('저장'),
@@ -270,7 +269,6 @@ class CategoryBudgetScreen extends ConsumerWidget {
         ),
       ),
     );
-    controller.dispose();
     if (result == null) {
       return;
     }

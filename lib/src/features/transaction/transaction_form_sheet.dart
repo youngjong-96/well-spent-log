@@ -186,7 +186,9 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                         ],
-                        textInputAction: TextInputAction.next,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _dismissKeyboard(),
+                        onTapOutside: (_) => _dismissKeyboard(),
                         style: Theme.of(context).textTheme.headlineLarge
                             ?.copyWith(fontWeight: FontWeight.w700),
                         decoration: const InputDecoration(
@@ -223,7 +225,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                         ),
                         const SizedBox(height: 16),
                         DropdownButtonFormField<int>(
-                          key: ValueKey(_categoryId),
                           initialValue: _categoryId,
                           decoration: const InputDecoration(
                             labelText: '카테고리',
@@ -236,6 +237,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                                 child: Text(category.name),
                               ),
                           ],
+                          onTap: _dismissKeyboard,
                           onChanged: (value) =>
                               setState(() => _categoryId = value),
                           validator: (value) =>
@@ -243,7 +245,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                         ),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<int>(
-                          key: ValueKey(_paymentMethodId),
                           initialValue: _paymentMethodId,
                           decoration: const InputDecoration(
                             labelText: '결제수단',
@@ -256,6 +257,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                                 child: Text(method.name),
                               ),
                           ],
+                          onTap: _dismissKeyboard,
                           onChanged: (value) =>
                               setState(() => _paymentMethodId = value),
                           validator: (value) =>
@@ -279,6 +281,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                                   ),
                                 ),
                             ],
+                            onTap: _dismissKeyboard,
                             onChanged: (value) {
                               setState(() => _refundedExpenseId = value);
                             },
@@ -298,6 +301,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                                 child: Text(account.name),
                               ),
                           ],
+                          onTap: _dismissKeyboard,
                           onChanged: (value) =>
                               setState(() => _accountId = value),
                           validator: (value) =>
@@ -323,6 +327,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                       TextFormField(
                         controller: _memoController,
                         maxLength: 80,
+                        onTapOutside: (_) => _dismissKeyboard(),
                         decoration: const InputDecoration(
                           labelText: '메모 (선택)',
                           prefixIcon: Icon(Icons.edit_note_outlined),
@@ -360,6 +365,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   }
 
   void _applyTemplate(ExpenseTemplate template) {
+    _dismissKeyboard();
     setState(() {
       _amountController.text = template.amount.toString();
       _categoryId = template.categoryId;
@@ -369,6 +375,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   }
 
   void _applyRecent(TransactionRecord record) {
+    _dismissKeyboard();
     setState(() {
       _amountController.text = record.amount.toString();
       _categoryId = record.categoryId;
@@ -378,6 +385,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   }
 
   Future<void> _pickDate() async {
+    _dismissKeyboard();
     final selected = await showDatePicker(
       context: context,
       initialDate: _date,
@@ -387,6 +395,10 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
     if (selected != null) {
       setState(() => _date = selected);
     }
+  }
+
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
   }
 
   Future<void> _save(_FormOptions options) async {

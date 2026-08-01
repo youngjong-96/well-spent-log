@@ -109,8 +109,8 @@ class TemplatesScreen extends ConsumerWidget {
       ).showSnackBar(const SnackBar(content: Text('카테고리와 결제수단을 먼저 준비해 주세요.')));
       return;
     }
-    final name = TextEditingController();
-    final amount = TextEditingController();
+    var name = '';
+    var amount = '';
     var categoryId = categories.first.id;
     var paymentMethodId = methods.first.id;
     final result = await showDialog<_TemplateInput>(
@@ -123,15 +123,15 @@ class TemplatesScreen extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
-                  controller: name,
                   autofocus: true,
+                  onChanged: (value) => name = value,
                   decoration: const InputDecoration(labelText: '지출명'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: amount,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (value) => amount = value,
                   decoration: const InputDecoration(
                     labelText: '금액',
                     suffixText: '원',
@@ -181,14 +181,14 @@ class TemplatesScreen extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () {
-                final parsedAmount = int.tryParse(amount.text);
-                if (name.text.trim().isNotEmpty &&
+                final parsedAmount = int.tryParse(amount);
+                if (name.trim().isNotEmpty &&
                     parsedAmount != null &&
                     parsedAmount > 0) {
                   Navigator.pop(
                     context,
                     _TemplateInput(
-                      name: name.text.trim(),
+                      name: name.trim(),
                       amount: parsedAmount,
                       categoryId: categoryId,
                       paymentMethodId: paymentMethodId,
@@ -202,8 +202,6 @@ class TemplatesScreen extends ConsumerWidget {
         ),
       ),
     );
-    name.dispose();
-    amount.dispose();
     if (result != null) {
       await repository.addTemplate(
         name: result.name,

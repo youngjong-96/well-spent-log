@@ -117,3 +117,9 @@
 - 테스트: `flutter_test`, Dart 단위 테스트, Flutter 위젯 테스트, `integration_test`, SQLite Repository 통합 테스트
 - 정적 분석/포맷: `flutter_lints`, `flutter analyze`, `dart format`
 - 빌드/개발 도구: Flutter CLI, Android Studio 최신 stable 및 Android SDK, iOS 빌드용 macOS/Xcode, 라이브러리는 stable 버전 우선
+
+## 빌드 시 실행 명령어
+```powershell
+cd C:\dev\well-spent-log
+flutter run
+```

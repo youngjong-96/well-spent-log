@@ -65,8 +65,8 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
   }
 
   Future<void> _setPin() async {
-    final pin = TextEditingController();
-    final confirmation = TextEditingController();
+    var pin = '';
+    var confirmation = '';
     String? errorText;
     final result = await showDialog<String>(
       context: context,
@@ -77,12 +77,12 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: pin,
                 autofocus: true,
                 obscureText: true,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 maxLength: 8,
+                onChanged: (value) => pin = value,
                 decoration: InputDecoration(
                   labelText: '숫자 4~8자리',
                   errorText: errorText,
@@ -90,11 +90,11 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: confirmation,
                 obscureText: true,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 maxLength: 8,
+                onChanged: (value) => confirmation = value,
                 decoration: const InputDecoration(labelText: 'PIN 확인'),
               ),
             ],
@@ -106,15 +106,15 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
             ),
             FilledButton(
               onPressed: () {
-                if (pin.text.length < 4 || pin.text != confirmation.text) {
+                if (pin.length < 4 || pin != confirmation) {
                   setDialogState(() {
-                    errorText = pin.text.length < 4
+                    errorText = pin.length < 4
                         ? '4자리 이상 입력해 주세요.'
                         : 'PIN이 서로 다릅니다.';
                   });
                   return;
                 }
-                Navigator.pop(context, pin.text);
+                Navigator.pop(context, pin);
               },
               child: const Text('저장'),
             ),
@@ -122,8 +122,6 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
         ),
       ),
     );
-    pin.dispose();
-    confirmation.dispose();
     if (result != null) {
       await ref.read(lockServiceProvider).setPin(result);
       setState(_reload);
@@ -131,7 +129,7 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
   }
 
   Future<void> _removePin() async {
-    final controller = TextEditingController();
+    var pin = '';
     String? errorText;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -139,11 +137,11 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('잠금을 해제할까요?'),
           content: TextField(
-            controller: controller,
             autofocus: true,
             obscureText: true,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            onChanged: (value) => pin = value,
             decoration: InputDecoration(
               labelText: '현재 PIN',
               errorText: errorText,
@@ -158,7 +156,7 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
               onPressed: () async {
                 final valid = await ref
                     .read(lockServiceProvider)
-                    .verifyPin(controller.text);
+                    .verifyPin(pin);
                 if (!context.mounted) {
                   return;
                 }
@@ -174,7 +172,6 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
         ),
       ),
     );
-    controller.dispose();
     if (confirmed == true) {
       await ref.read(lockServiceProvider).removePin();
       setState(_reload);

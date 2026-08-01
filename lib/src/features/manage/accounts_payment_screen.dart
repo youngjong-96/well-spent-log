@@ -75,10 +75,10 @@ class AccountsPaymentScreen extends ConsumerWidget {
   }
 
   Future<void> _addAccount(BuildContext context, WidgetRef ref) async {
-    final name = TextEditingController();
-    final bank = TextEditingController();
-    final number = TextEditingController();
-    final balance = TextEditingController(text: '0');
+    var name = '';
+    var bank = '';
+    var number = '';
+    var balance = '0';
     var included = true;
     final result = await showDialog<_AccountInput>(
       context: context,
@@ -90,30 +90,31 @@ class AccountsPaymentScreen extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
-                  controller: name,
                   autofocus: true,
+                  onChanged: (value) => name = value,
                   decoration: const InputDecoration(labelText: '계좌명'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: bank,
+                  onChanged: (value) => bank = value,
                   decoration: const InputDecoration(labelText: '은행명'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: number,
                   keyboardType: TextInputType.number,
+                  onChanged: (value) => number = value,
                   decoration: const InputDecoration(labelText: '계좌번호'),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: balance,
+                TextFormField(
+                  initialValue: balance,
                   keyboardType: const TextInputType.numberWithOptions(
                     signed: true,
                   ),
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(RegExp(r'^-?\d*')),
                   ],
+                  onChanged: (value) => balance = value,
                   decoration: const InputDecoration(
                     labelText: '현재 기준 잔액',
                     suffixText: '원',
@@ -137,16 +138,16 @@ class AccountsPaymentScreen extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () {
-                if (name.text.trim().isEmpty) {
+                if (name.trim().isEmpty) {
                   return;
                 }
                 Navigator.pop(
                   context,
                   _AccountInput(
-                    name: name.text.trim(),
-                    bank: bank.text.trim(),
-                    number: number.text.trim(),
-                    balance: int.tryParse(balance.text) ?? 0,
+                    name: name.trim(),
+                    bank: bank.trim(),
+                    number: number.trim(),
+                    balance: int.tryParse(balance) ?? 0,
                     included: included,
                   ),
                 );
@@ -157,10 +158,6 @@ class AccountsPaymentScreen extends ConsumerWidget {
         ),
       ),
     );
-    name.dispose();
-    bank.dispose();
-    number.dispose();
-    balance.dispose();
     if (result != null) {
       await ref
           .read(financeRepositoryProvider)
@@ -179,18 +176,19 @@ class AccountsPaymentScreen extends ConsumerWidget {
     WidgetRef ref,
     Account account,
   ) async {
-    final controller = TextEditingController(text: '${account.balance}');
+    var balance = '${account.balance}';
     final value = await showDialog<int>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('${account.name} 잔액 보정'),
-        content: TextField(
-          controller: controller,
+        content: TextFormField(
+          initialValue: balance,
           autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(signed: true),
           inputFormatters: [
             FilteringTextInputFormatter.allow(RegExp(r'^-?\d*')),
           ],
+          onChanged: (value) => balance = value,
           decoration: const InputDecoration(
             labelText: '변경 후 잔액',
             suffixText: '원',
@@ -203,7 +201,7 @@ class AccountsPaymentScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () {
-              final parsed = int.tryParse(controller.text);
+              final parsed = int.tryParse(balance);
               if (parsed != null) {
                 Navigator.pop(context, parsed);
               }
@@ -213,7 +211,6 @@ class AccountsPaymentScreen extends ConsumerWidget {
         ],
       ),
     );
-    controller.dispose();
     if (value != null) {
       await ref
           .read(financeRepositoryProvider)
@@ -226,9 +223,9 @@ class AccountsPaymentScreen extends ConsumerWidget {
     WidgetRef ref,
     Account account,
   ) async {
-    final name = TextEditingController(text: account.name);
-    final bank = TextEditingController(text: account.bankName ?? '');
-    final number = TextEditingController(text: account.accountNumber ?? '');
+    var name = account.name;
+    var bank = account.bankName ?? '';
+    var number = account.accountNumber ?? '';
     final result = await showDialog<(String, String, String)>(
       context: context,
       builder: (context) => AlertDialog(
@@ -237,20 +234,23 @@ class AccountsPaymentScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: name,
+              TextFormField(
+                initialValue: name,
                 autofocus: true,
+                onChanged: (value) => name = value,
                 decoration: const InputDecoration(labelText: '계좌명'),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: bank,
+              TextFormField(
+                initialValue: bank,
+                onChanged: (value) => bank = value,
                 decoration: const InputDecoration(labelText: '은행명'),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: number,
+              TextFormField(
+                initialValue: number,
                 keyboardType: TextInputType.number,
+                onChanged: (value) => number = value,
                 decoration: const InputDecoration(labelText: '계좌번호'),
               ),
             ],
@@ -263,11 +263,11 @@ class AccountsPaymentScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () {
-              if (name.text.trim().isNotEmpty) {
+              if (name.trim().isNotEmpty) {
                 Navigator.pop(context, (
-                  name.text.trim(),
-                  bank.text.trim(),
-                  number.text.trim(),
+                  name.trim(),
+                  bank.trim(),
+                  number.trim(),
                 ));
               }
             },
@@ -276,9 +276,6 @@ class AccountsPaymentScreen extends ConsumerWidget {
         ],
       ),
     );
-    name.dispose();
-    bank.dispose();
-    number.dispose();
     if (result != null) {
       await ref
           .read(financeRepositoryProvider)
@@ -306,11 +303,9 @@ class AccountsPaymentScreen extends ConsumerWidget {
       );
       return;
     }
-    final name = TextEditingController(text: existing?.name ?? '');
-    final company = TextEditingController(text: existing?.cardCompany ?? '');
-    final billingDay = TextEditingController(
-      text: existing?.billingDay?.toString() ?? '',
-    );
+    var name = existing?.name ?? '';
+    var company = existing?.cardCompany ?? '';
+    var billingDay = existing?.billingDay?.toString() ?? '';
     var accountId =
         bankAccounts.any((account) => account.id == existing?.accountId)
         ? existing!.accountId
@@ -324,21 +319,24 @@ class AccountsPaymentScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
-                  controller: name,
+                TextFormField(
+                  initialValue: name,
                   autofocus: true,
+                  onChanged: (value) => name = value,
                   decoration: const InputDecoration(labelText: '카드 이름'),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: company,
+                TextFormField(
+                  initialValue: company,
+                  onChanged: (value) => company = value,
                   decoration: const InputDecoration(labelText: '카드사'),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: billingDay,
+                TextFormField(
+                  initialValue: billingDay,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (value) => billingDay = value,
                   decoration: const InputDecoration(
                     labelText: '결제일',
                     suffixText: '일',
@@ -371,16 +369,16 @@ class AccountsPaymentScreen extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () {
-                final day = int.tryParse(billingDay.text);
-                if (name.text.trim().isNotEmpty &&
+                final day = int.tryParse(billingDay);
+                if (name.trim().isNotEmpty &&
                     day != null &&
                     day >= 1 &&
                     day <= 31) {
                   Navigator.pop(
                     context,
                     _CardInput(
-                      name: name.text.trim(),
-                      company: company.text.trim(),
+                      name: name.trim(),
+                      company: company.trim(),
                       billingDay: day,
                       accountId: accountId,
                     ),
@@ -393,9 +391,6 @@ class AccountsPaymentScreen extends ConsumerWidget {
         ),
       ),
     );
-    name.dispose();
-    company.dispose();
-    billingDay.dispose();
     if (result != null) {
       if (existing == null) {
         await ref
