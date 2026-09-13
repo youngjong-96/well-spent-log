@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:well_spent_log/src/shared/widgets/transaction_list_tile.dart';
+import 'package:well_spent_log/src/features/transaction/transaction_form_sheet.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +28,90 @@ void main() {
   sqfliteFfiInit();
 
   setUpAll(() => initializeDateFormatting('ko_KR'));
+
+  testWidgets('menu actions invoke edit and delete callbacks', (tester) async {
+    var edits = 0;
+    var deletes = 0;
+    final record = TransactionRecord(
+      id: 1,
+      type: RecordType.expense,
+      occurredAt: DateTime(2026, 8, 1),
+      amount: 5000,
+      memo: 'lunch',
+      accountId: 1,
+      accountName: 'cash',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TransactionListTile(
+            record: record,
+            onEdit: () => edits++,
+            onDelete: () => deletes++,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    expect(deletes, 1);
+    expect(edits, 0);
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    expect(edits, 1);
+  });
+
+  testWidgets('edit form prefills record and updates instead of adding', (
+    tester,
+  ) async {
+    final repository = _FakeAccountsRepository();
+    addTearDown(repository.dispose);
+    final record = TransactionRecord(
+      id: 42,
+      type: RecordType.expense,
+      occurredAt: DateTime(2026, 8, 1),
+      amount: 5000,
+      memo: 'lunch',
+      accountId: 1,
+      accountName: 'cash',
+      categoryId: 9,
+      paymentMethodId: 1,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [financeRepositoryProvider.overrideWithValue(repository)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => TransactionFormSheet.edit(context, record),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('5,000'), findsOneWidget);
+    expect(find.text('lunch'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).first, '7000');
+    final save = find.byType(FilledButton);
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(repository.updatedId, 42);
+    expect(repository.updatedDraft!.amount, 7000);
+    expect(repository.updatedDraft!.categoryId, 9);
+    expect(repository.updatedDraft!.occurredAt, record.occurredAt);
+    expect(repository.savedTransactions, isEmpty);
+    expect(find.byType(TransactionFormSheet), findsNothing);
+  });
 
   testWidgets('계좌 저장 후 목록 갱신에서 위젯 트리 예외가 발생하지 않는다', (tester) async {
     final repository = _FakeAccountsRepository();
@@ -133,6 +219,14 @@ class _FakeAccountsRepository extends FinanceRepository {
       );
 
   final _controller = StreamController<int>.broadcast();
+  int? updatedId;
+  TransactionDraft? updatedDraft;
+  @override
+  Future<void> updateTransaction(int id, TransactionDraft draft) async {
+    updatedId = id;
+    updatedDraft = draft;
+  }
+
   final savedTransactions = <TransactionDraft>[];
   final _accounts = <Account>[
     const Account(

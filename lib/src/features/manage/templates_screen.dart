@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers.dart';
@@ -130,7 +129,7 @@ class TemplatesScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
                 TextField(
                   keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  inputFormatters: [const AmountInputFormatter()],
                   onChanged: (value) => amount = value,
                   decoration: const InputDecoration(
                     labelText: '금액',
@@ -181,7 +180,7 @@ class TemplatesScreen extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () {
-                final parsedAmount = int.tryParse(amount);
+                final parsedAmount = parseAmount(amount);
                 if (name.trim().isNotEmpty &&
                     parsedAmount != null &&
                     parsedAmount > 0) {

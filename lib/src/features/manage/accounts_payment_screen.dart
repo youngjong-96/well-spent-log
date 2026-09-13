@@ -112,7 +112,7 @@ class AccountsPaymentScreen extends ConsumerWidget {
                     signed: true,
                   ),
                   inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'^-?\d*')),
+                    const AmountInputFormatter(allowNegative: true),
                   ],
                   onChanged: (value) => balance = value,
                   decoration: const InputDecoration(
@@ -147,7 +147,7 @@ class AccountsPaymentScreen extends ConsumerWidget {
                     name: name.trim(),
                     bank: bank.trim(),
                     number: number.trim(),
-                    balance: int.tryParse(balance) ?? 0,
+                    balance: parseAmount(balance) ?? 0,
                     included: included,
                   ),
                 );
@@ -176,7 +176,7 @@ class AccountsPaymentScreen extends ConsumerWidget {
     WidgetRef ref,
     Account account,
   ) async {
-    var balance = '${account.balance}';
+    var balance = formatAmount(account.balance);
     final value = await showDialog<int>(
       context: context,
       builder: (context) => AlertDialog(
@@ -185,9 +185,7 @@ class AccountsPaymentScreen extends ConsumerWidget {
           initialValue: balance,
           autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(signed: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'^-?\d*')),
-          ],
+          inputFormatters: [const AmountInputFormatter(allowNegative: true)],
           onChanged: (value) => balance = value,
           decoration: const InputDecoration(
             labelText: '변경 후 잔액',
@@ -201,7 +199,7 @@ class AccountsPaymentScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () {
-              final parsed = int.tryParse(balance);
+              final parsed = parseAmount(balance);
               if (parsed != null) {
                 Navigator.pop(context, parsed);
               }

@@ -3,18 +3,26 @@ import 'package:flutter/material.dart';
 class AppColors {
   const AppColors._();
 
-  static const background = Color(0xFFF8F9F7);
+  // The complete app palette is limited to these five base colors.
   static const surface = Color(0xFFFFFFFF);
-  static const surfaceVariant = Color(0xFFEEF1EE);
-  static const textPrimary = Color(0xFF202124);
-  static const textSecondary = Color(0xFF687076);
-  static const border = Color(0xFFD8DED8);
-  static const primary = Color(0xFF006C67);
-  static const primaryContainer = Color(0xFFD7F3EF);
-  static const accent = Color(0xFFF2B84B);
-  static const income = Color(0xFF2F8A57);
-  static const warning50 = Color(0xFFD99A1E);
-  static const warning80 = Color(0xFFE36B3F);
-  static const overBudget = Color(0xFFD8584A);
-  static const info = Color(0xFF5865B2);
+  static const paleBlue = Color(0xFFF2F7FC);
+  static const softBlue = Color(0xFFD8E8F5);
+  static const skyBlue = Color(0xFF84B6E2);
+  static const navyBlue = Color(0xFF294761);
+
+  static const background = paleBlue;
+  static const surfaceVariant = paleBlue;
+  static const textPrimary = navyBlue;
+  static const textSecondary = navyBlue;
+  static const border = softBlue;
+  static const primary = skyBlue;
+  static const primaryContainer = softBlue;
+  static const accent = skyBlue;
+  static const income = skyBlue;
+  static const warning50 = skyBlue;
+  static const warning80 = navyBlue;
+  static const overBudget = navyBlue;
+  static const info = skyBlue;
+
+  static const categoryPalette = [softBlue, skyBlue, navyBlue];
 }

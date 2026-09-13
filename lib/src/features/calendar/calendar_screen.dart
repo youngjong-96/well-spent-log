@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../application/providers.dart';
+import '../transaction/transaction_form_sheet.dart';
 import '../../domain/models/transaction_record.dart';
 import '../../shared/formatters.dart';
 import '../../shared/widgets/transaction_list_tile.dart';
@@ -113,6 +114,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     final record = selectedRecords[index];
                     return TransactionListTile(
                       record: record,
+                      onEdit: () => TransactionFormSheet.edit(context, record),
                       onDelete: () => _deleteRecord(record),
                     );
                   },
@@ -280,7 +282,7 @@ class _MonthCalendar extends StatelessWidget {
                         FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            _compactAmount(expenseAmount),
+                            formatAmount(expenseAmount),
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
@@ -309,15 +311,6 @@ class _MonthCalendar extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  String _compactAmount(int amount) {
-    final absolute = amount.abs();
-    if (absolute >= 10000) {
-      final value = absolute / 10000;
-      return '${amount < 0 ? '-' : ''}${value.toStringAsFixed(value < 10 ? 1 : 0)}만';
-    }
-    return '${amount < 0 ? '-' : ''}$absolute';
   }
 }
 

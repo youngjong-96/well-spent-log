@@ -35,6 +35,138 @@ void main() {
     await database.close();
   });
 
+  test(
+    'home includes all calendar-month spending sorted by amount, net of refunds',
+    () async {
+      await repository.setMonthStartDay(25);
+      final account = (await repository.listAccounts()).first;
+      final category = (await repository.listCategories()).first;
+      final method = (await repository.listPaymentMethods()).first;
+      Future<int> add(
+        DateTime date,
+        int amount, {
+        RecordType type = RecordType.expense,
+      }) => repository.addTransaction(
+        TransactionDraft(
+          type: type,
+          occurredAt: date,
+          amount: amount,
+          accountId: account.id,
+          categoryId: category.id,
+          paymentMethodId: method.id,
+        ),
+      );
+      for (var i = 1; i <= 21; i++) {
+        await add(DateTime(2026, 8, i), i * 1000);
+      }
+      await add(DateTime(2026, 7, 31, 23, 59), 999999);
+      await add(DateTime(2026, 9), 999999);
+      await add(DateTime(2026, 8, 10), 999999, type: RecordType.income);
+      final refundId = await add(
+        DateTime(2026, 8, 31, 23, 59),
+        500,
+        type: RecordType.refund,
+      );
+      final deletedId = await add(DateTime(2026, 8, 5), 888888);
+      await repository.softDeleteTransaction(deletedId);
+      final summary = await repository.getHomeSummary(DateTime(2026, 8, 15));
+      expect(summary.monthlyTransactions, hasLength(22));
+      expect(summary.monthlyTransactions.first.amount, 21000);
+      expect(summary.monthlyTransactions.last.id, refundId);
+      expect(
+        summary.monthlyTransactions.map((r) => r.amount),
+        orderedEquals([for (var i = 21; i >= 1; i--) i * 1000, 500]),
+      );
+      expect(summary.monthlyExpense.amount, 230500);
+      final empty = await repository.getHomeSummary(DateTime(2025, 1));
+      expect(empty.monthlyTransactions, isEmpty);
+      expect(empty.monthlyExpense.amount, 0);
+    },
+  );
+
+  test(
+    'update preserves identity and adjusts balances and reports atomically',
+    () async {
+      final cash = (await repository.listAccounts()).first;
+      final categories = await repository.listCategories();
+      final method = (await repository.listPaymentMethods()).first;
+      await repository.addAccount(
+        name: 'bank',
+        bankName: 'bank',
+        accountNumber: '',
+        openingBalance: 100000,
+        includeInTotal: true,
+      );
+      final bank = (await repository.listAccounts()).last;
+      await repository.addCard(
+        name: 'card',
+        company: 'card',
+        billingDay: 1,
+        accountId: bank.id,
+      );
+      final card = (await repository.listPaymentMethods()).last;
+      TransactionDraft draft(
+        int amount, {
+        int? accountId,
+        RecordType type = RecordType.expense,
+      }) => TransactionDraft(
+        type: type,
+        occurredAt: DateTime(2026, 8, 12),
+        amount: amount,
+        accountId: accountId ?? bank.id,
+        categoryId: categories.last.id,
+        paymentMethodId: card.id,
+        memo: 'edited',
+      );
+      final id = await repository.addTransaction(
+        TransactionDraft(
+          type: RecordType.expense,
+          occurredAt: DateTime(2026, 7, 10),
+          amount: 10000,
+          accountId: cash.id,
+          categoryId: categories.first.id,
+          paymentMethodId: method.id,
+        ),
+      );
+      await repository.updateTransaction(id, draft(15000));
+      await repository.updateTransaction(id, draft(15000));
+      final record = (await repository.listTransactions()).single;
+      expect(record.id, id);
+      expect(record.memo, 'edited');
+      expect(record.categoryId, categories.last.id);
+      expect(record.paymentMethodId, card.id);
+      expect((await repository.listAccounts()).first.balance, 0);
+      expect((await repository.listAccounts()).last.balance, 85000);
+      expect((await repository.getReport(DateTime(2026, 7))).totalExpense, 0);
+      expect(
+        (await repository.getReport(DateTime(2026, 8))).totalExpense,
+        15000,
+      );
+      await repository.updateTransaction(id, draft(6000));
+      expect((await repository.listAccounts()).last.balance, 94000);
+      await expectLater(
+        repository.updateTransaction(id, draft(3000, accountId: -1)),
+        throwsStateError,
+      );
+      expect((await repository.listAccounts()).last.balance, 94000);
+      expect((await repository.listTransactions()).single.amount, 6000);
+      await repository.softDeleteTransaction(id);
+      await repository.softDeleteTransaction(id);
+      expect((await repository.listAccounts()).last.balance, 100000);
+      await expectLater(
+        repository.updateTransaction(id, draft(6000)),
+        throwsStateError,
+      );
+      await repository.restoreTransaction(id);
+      expect((await repository.listAccounts()).last.balance, 94000);
+      await repository.updateTransaction(
+        id,
+        draft(2000, type: RecordType.refund),
+      );
+      expect((await repository.listAccounts()).last.balance, 102000);
+    },
+  );
+
   test('지출 삭제와 복원이 잔액 및 월 집계에 함께 반영된다', () async {
     await repository.addAccount(
       name: '생활비 통장',

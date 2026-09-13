@@ -21,13 +21,25 @@ class AppDatabase {
     return _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
         onCreate: (db, version) async {
           await _createSchema(db);
           await _seed(db);
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          if (oldVersion < 2) {
+            await db.execute('''
+              UPDATE categories
+              SET color_hex = CASE ((id - 1) % 3)
+                WHEN 0 THEN '#84B6E2'
+                WHEN 1 THEN '#294761'
+                ELSE '#D8E8F5'
+              END
+            ''');
+          }
         },
       ),
     );
@@ -165,14 +177,14 @@ class AppDatabase {
   Future<void> _seed(Database db) async {
     final now = DateTime.now().toIso8601String();
     const categories = [
-      ('식비', '#7A5CFA'),
-      ('카페/간식', '#8B6F47'),
-      ('교통', '#007E9E'),
-      ('생활', '#4C7C59'),
-      ('쇼핑', '#B04A82'),
-      ('구독/고정비', '#5E6472'),
-      ('건강', '#2A9D8F'),
-      ('기타', '#8A817C'),
+      ('식비', '#84B6E2'),
+      ('카페/간식', '#294761'),
+      ('교통', '#D8E8F5'),
+      ('생활', '#84B6E2'),
+      ('쇼핑', '#294761'),
+      ('구독/고정비', '#D8E8F5'),
+      ('건강', '#84B6E2'),
+      ('기타', '#294761'),
     ];
     for (var index = 0; index < categories.length; index++) {
       await db.insert('categories', {

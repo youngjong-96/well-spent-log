@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../application/providers.dart';
+import '../transaction/transaction_form_sheet.dart';
 import '../../domain/models/transaction_record.dart';
 import '../../shared/formatters.dart';
 import '../../shared/widgets/budget_progress_tile.dart';
@@ -18,6 +19,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final Set<int> _amountCategoryIds = {};
+  int _page = 0;
+  DateTime? _displayedMonth;
+  final _listHeadingKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +33,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         error: (error, stackTrace) =>
             _ErrorBody(onRetry: () => ref.invalidate(homeSummaryProvider)),
         data: (data) {
+          if (_displayedMonth != data.month) {
+            _displayedMonth = data.month;
+            _page = 0;
+          }
+          final pageCount = (data.monthlyTransactions.length / 10).ceil();
+          _page = _page.clamp(0, pageCount == 0 ? 0 : pageCount - 1);
+          final pageRecords = data.monthlyTransactions
+              .skip(_page * 10)
+              .take(10)
+              .toList();
           final periodText =
               '${DateFormat('M.d').format(data.period.startDate)}'
               ' - ${DateFormat('M.d').format(data.period.endDate)}';
@@ -48,7 +62,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                       ),
                       Text(
-                        periodText,
+                        '예산 $periodText',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
@@ -58,7 +72,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 sliver: SliverToBoxAdapter(
-                  child: _BalanceSummary(amount: data.totalBalance.amount),
+                  child: _ExpenseSummary(
+                    amount: data.monthlyExpense.amount,
+                    month: data.month,
+                  ),
                 ),
               ),
               const SliverPadding(
@@ -68,9 +85,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
               if (data.budgetUsages.isEmpty)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: Text('관리에서 카테고리와 예산을 설정해 주세요.')),
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('관리에서 카테고리와 예산을 설정해 주세요.'),
+                  ),
                 )
               else
                 SliverPadding(
@@ -97,33 +116,70 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     },
                   ),
                 ),
-              const SliverPadding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 sliver: SliverToBoxAdapter(
-                  child: _SectionTitle(title: '최근 기록'),
+                  child: Column(
+                    key: _listHeadingKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _SectionTitle(title: '이번 달 지출 내역'),
+                      const SizedBox(height: 4),
+                      Text(
+                        '금액 높은 순 · 총 ${data.monthlyTransactions.length}건',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              if (data.recentTransactions.isEmpty)
+              if (data.monthlyTransactions.isEmpty)
                 const SliverPadding(
                   padding: EdgeInsets.fromLTRB(16, 20, 16, 120),
-                  sliver: SliverToBoxAdapter(
-                    child: Text('아직 기록이 없어요. 아래 기록 버튼으로 시작해 보세요.'),
-                  ),
+                  sliver: SliverToBoxAdapter(child: Text('이번 달 지출 내역이 없어요.')),
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.only(top: 8, bottom: 120),
+                  padding: const EdgeInsets.only(top: 8),
                   sliver: SliverList.separated(
-                    itemCount: data.recentTransactions.length,
+                    itemCount: pageRecords.length,
                     separatorBuilder: (context, index) =>
                         const Divider(height: 1, indent: 72),
                     itemBuilder: (context, index) {
-                      final record = data.recentTransactions[index];
+                      final record = pageRecords[index];
                       return TransactionListTile(
                         record: record,
+                        onEdit: () =>
+                            TransactionFormSheet.edit(context, record),
                         onDelete: () => _confirmDelete(record),
                       );
                     },
+                  ),
+                ),
+              if (pageCount > 0)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+                  sliver: SliverToBoxAdapter(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton.icon(
+                          onPressed: _page > 0
+                              ? () => _changePage(_page - 1)
+                              : null,
+                          icon: const Icon(Icons.chevron_left),
+                          label: const Text('이전'),
+                        ),
+                        Text('${_page + 1} / $pageCount 페이지'),
+                        TextButton.icon(
+                          onPressed: _page + 1 < pageCount
+                              ? () => _changePage(_page + 1)
+                              : null,
+                          icon: const Icon(Icons.chevron_right),
+                          label: const Text('다음'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
             ],
@@ -131,6 +187,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         },
       ),
     );
+  }
+
+  void _changePage(int page) {
+    setState(() => _page = page);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final heading = _listHeadingKey.currentContext;
+      if (heading != null) {
+        Scrollable.ensureVisible(
+          heading,
+          duration: const Duration(milliseconds: 200),
+        );
+      }
+    });
   }
 
   Future<void> _confirmDelete(TransactionRecord record) async {
@@ -174,15 +243,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-class _BalanceSummary extends StatelessWidget {
-  const _BalanceSummary({required this.amount});
+class _ExpenseSummary extends StatelessWidget {
+  const _ExpenseSummary({required this.amount, required this.month});
 
   final int amount;
+  final DateTime month;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: '앱 기록 기준 현재 총잔액 ${formatWon(amount)}',
+      label: '이번 달 지출 합계 ${formatWon(amount)}',
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -192,7 +262,7 @@ class _BalanceSummary extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('현재 총잔액', style: Theme.of(context).textTheme.bodyMedium),
+            Text('이번 달 지출 합계', style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 8),
             FittedBox(
               fit: BoxFit.scaleDown,
@@ -208,7 +278,7 @@ class _BalanceSummary extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '앱 기록 기준 · 실제 은행 잔액과 다를 수 있어요',
+              '${month.month}월 1일–${DateTime(month.year, month.month + 1, 0).day}일 · 환불 차감',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

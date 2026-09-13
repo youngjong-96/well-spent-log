@@ -52,7 +52,18 @@ class FinanceRepository {
       WHERE include_in_total = 1 AND is_active = 1
     ''');
     final usages = await _getBudgetUsages(db, period);
-    final recent = await listTransactions(limit: 8);
+    final month = DateTime(anchor.year, anchor.month);
+    final monthly =
+        (await listTransactions(
+            start: month,
+            endExclusive: DateTime(month.year, month.month + 1),
+          )).where((record) => record.type != RecordType.income).toList()
+          ..sort((a, b) {
+            final amountOrder = b.amount.compareTo(a.amount);
+            if (amountOrder != 0) return amountOrder;
+            final dateOrder = b.occurredAt.compareTo(a.occurredAt);
+            return dateOrder != 0 ? dateOrder : b.id.compareTo(a.id);
+          });
     return HomeSummary(
       totalBalance: Money(_asInt(balanceRows.first['total'])),
       budgetUsages: usages,
@@ -61,7 +72,11 @@ class FinanceRepository {
         endDate: period.endDate,
       ),
       monthStartDay: period.monthStartDay,
-      recentTransactions: recent,
+      monthlyTransactions: monthly,
+      month: month,
+      monthlyExpense: Money(
+        monthly.fold(0, (sum, record) => sum - record.signedAmount),
+      ),
     );
   }
 
@@ -197,6 +212,85 @@ class FinanceRepository {
     }
     _notifyChanged();
     return id;
+  }
+
+  Future<void> updateTransaction(
+    int transactionId,
+    TransactionDraft draft,
+  ) async {
+    if (draft.amount <= 0) {
+      throw ArgumentError.value(draft.amount, 'amount');
+    }
+    if (draft.type != RecordType.income &&
+        (draft.categoryId == null || draft.paymentMethodId == null)) {
+      throw ArgumentError('지출과 환불에는 카테고리와 결제수단이 필요합니다.');
+    }
+    final db = await _database.database;
+    final now = DateTime.now().toIso8601String();
+    final previous = await db.transaction<TransactionRecord>((txn) async {
+      final record = await _getTransaction(txn, transactionId);
+      if (record.isDeleted) {
+        throw StateError('삭제된 내역은 수정할 수 없습니다.');
+      }
+      // Reverse the old effect and apply the new one atomically, even when
+      // the payment account or transaction type changes.
+      final deltas = <int, int>{record.accountId: -record.signedAmount};
+      deltas.update(
+        draft.accountId,
+        (value) => value + draft.type.signedAmount(draft.amount),
+        ifAbsent: () => draft.type.signedAmount(draft.amount),
+      );
+      for (final entry in deltas.entries) {
+        final account = await _getAccount(txn, entry.key);
+        final balance = account.balance + entry.value;
+        await txn.update(
+          'accounts',
+          {'balance': balance, 'updated_at': now},
+          where: 'id = ?',
+          whereArgs: [entry.key],
+        );
+        if (entry.value != 0) {
+          await txn.insert('account_ledger', {
+            'account_id': entry.key,
+            'source_type': 'update',
+            'source_id': transactionId,
+            'delta': entry.value,
+            'balance_after': balance,
+            'created_at': now,
+          });
+        }
+      }
+      await txn.update(
+        'transactions',
+        {
+          'type': draft.type.name,
+          'occurred_at': draft.occurredAt.toIso8601String(),
+          'amount': draft.amount,
+          'category_id': draft.categoryId,
+          'payment_method_id': draft.paymentMethodId,
+          'account_id': draft.accountId,
+          'memo': draft.memo.trim(),
+          'refunded_expense_id': draft.refundedExpenseId,
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [transactionId],
+      );
+      return record;
+    });
+    _notifyChanged();
+    if (previous.categoryId != null) {
+      await _evaluateBudgetAlerts(
+        categoryId: previous.categoryId!,
+        anchor: previous.occurredAt,
+      );
+    }
+    if (draft.categoryId != null) {
+      await _evaluateBudgetAlerts(
+        categoryId: draft.categoryId!,
+        anchor: draft.occurredAt,
+      );
+    }
   }
 
   Future<void> softDeleteTransaction(int transactionId) async {

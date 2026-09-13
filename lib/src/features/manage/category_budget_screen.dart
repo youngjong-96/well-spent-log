@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme/app_colors.dart';
 import '../../application/providers.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/home_summary.dart';
@@ -10,16 +10,7 @@ import '../../shared/formatters.dart';
 class CategoryBudgetScreen extends ConsumerWidget {
   const CategoryBudgetScreen({super.key});
 
-  static const _swatches = [
-    '#7A5CFA',
-    '#8B6F47',
-    '#007E9E',
-    '#4C7C59',
-    '#B04A82',
-    '#5E6472',
-    '#2A9D8F',
-    '#8A817C',
-  ];
+  static const _swatches = ['#D8E8F5', '#84B6E2', '#294761'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -150,7 +141,7 @@ class CategoryBudgetScreen extends ConsumerWidget {
     SpendingCategory category,
     int currentAmount,
   ) async {
-    var amount = currentAmount == 0 ? '' : '$currentAmount';
+    var amount = currentAmount == 0 ? '' : formatAmount(currentAmount);
     final result = await showDialog<int>(
       context: context,
       builder: (context) => AlertDialog(
@@ -159,7 +150,7 @@ class CategoryBudgetScreen extends ConsumerWidget {
           initialValue: amount,
           autofocus: true,
           keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          inputFormatters: [const AmountInputFormatter()],
           onChanged: (value) => amount = value,
           decoration: const InputDecoration(
             labelText: '예산 금액',
@@ -173,7 +164,7 @@ class CategoryBudgetScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () {
-              Navigator.pop(context, int.tryParse(amount.trim()) ?? 0);
+              Navigator.pop(context, parseAmount(amount) ?? 0);
             },
             child: const Text('저장'),
           ),
@@ -242,7 +233,10 @@ class CategoryBudgetScreen extends ConsumerWidget {
                                 : null,
                           ),
                           child: colorHex == swatch
-                              ? const Icon(Icons.check, color: Colors.white)
+                              ? const Icon(
+                                  Icons.check,
+                                  color: AppColors.navyBlue,
+                                )
                               : null,
                         ),
                       ),
