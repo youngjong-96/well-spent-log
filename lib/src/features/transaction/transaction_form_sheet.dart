@@ -25,6 +25,8 @@ class TransactionFormSheet extends ConsumerStatefulWidget {
     BuildContext context,
     TransactionRecord record,
   ) async {
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    final container = ProviderScope.containerOf(context, listen: false);
     final transactionId = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -37,11 +39,68 @@ class TransactionFormSheet extends ConsumerStatefulWidget {
       ),
     );
     if (context.mounted && transactionId != null) {
-      ScaffoldMessenger.of(context)
+      messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('수정했어요')));
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('수정했어요'),
+            action: SnackBarAction(
+              label: '되돌리기',
+              onPressed: () => _restoreBeforeEdit(
+                container: container,
+                messenger: messenger,
+                record: record,
+              ),
+            ),
+          ),
+        );
     }
     return transactionId;
+  }
+
+  static Future<void> _restoreBeforeEdit({
+    required ProviderContainer container,
+    required ScaffoldMessengerState messenger,
+    required TransactionRecord record,
+  }) async {
+    try {
+      await container
+          .read(financeRepositoryProvider)
+          .updateTransaction(
+            record.id,
+            TransactionDraft(
+              type: record.type,
+              occurredAt: record.occurredAt,
+              amount: record.amount,
+              categoryId: record.categoryId,
+              paymentMethodId: record.paymentMethodId,
+              accountId: record.accountId,
+              memo: record.memo,
+              refundedExpenseId: record.refundedExpenseId,
+            ),
+          );
+      if (!messenger.mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('수정 전 내용으로 되돌렸어요')));
+    } catch (_) {
+      if (!messenger.mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('수정을 되돌리지 못했어요.'),
+            action: SnackBarAction(
+              label: '다시 시도',
+              onPressed: () => _restoreBeforeEdit(
+                container: container,
+                messenger: messenger,
+                record: record,
+              ),
+            ),
+          ),
+        );
+    }
   }
 
   @override

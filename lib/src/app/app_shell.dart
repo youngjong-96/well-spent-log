@@ -120,7 +120,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         SnackBar(
           content: const Text('저장했어요'),
           action: SnackBarAction(
-            label: '되돌리기',
+            label: '저장 취소',
             onPressed: () => _undoCreatedTransaction(transactionId),
           ),
         ),
@@ -138,7 +138,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: const Text('저장을 되돌리지 못했어요.'),
+            content: const Text('저장을 취소하지 못했어요.'),
             action: SnackBarAction(
               label: '다시 시도',
               onPressed: () => _undoCreatedTransaction(transactionId),

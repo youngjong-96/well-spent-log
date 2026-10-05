@@ -119,6 +119,11 @@ void main() {
     expect(repository.savedTransactions, isEmpty);
     expect(find.byType(TransactionFormSheet), findsNothing);
     expect(find.text('수정했어요'), findsOneWidget);
+    expect(find.text('되돌리기'), findsOneWidget);
+    tester.widget<SnackBarAction>(find.byType(SnackBarAction)).onPressed();
+    await tester.pumpAndSettle();
+    expect(repository.updatedDrafts.map((draft) => draft.amount), [7000, 5000]);
+    expect(find.text('수정 전 내용으로 되돌렸어요'), findsOneWidget);
   });
 
   testWidgets('계좌 저장 후 목록 갱신에서 위젯 트리 예외가 발생하지 않는다', (tester) async {
@@ -263,6 +268,7 @@ void main() {
 
     expect(repository.savedTransactions, hasLength(1));
     expect(find.text('저장했어요'), findsOneWidget);
+    expect(find.text('저장 취소'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
@@ -288,11 +294,13 @@ class _FakeAccountsRepository extends FinanceRepository {
   final _controller = StreamController<int>.broadcast();
   int? updatedId;
   TransactionDraft? updatedDraft;
+  final updatedDrafts = <TransactionDraft>[];
   bool failNextSave = false;
   @override
   Future<void> updateTransaction(int id, TransactionDraft draft) async {
     updatedId = id;
     updatedDraft = draft;
+    updatedDrafts.add(draft);
   }
 
   final savedTransactions = <TransactionDraft>[];
