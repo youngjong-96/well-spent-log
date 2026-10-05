@@ -4,13 +4,14 @@ import 'package:well_spent_log/src/app/theme/app_theme.dart';
 import 'package:well_spent_log/src/shared/formatters.dart';
 
 void main() {
-  test('app theme uses only the five documented base colors', () {
+  test('app theme uses only the six documented base colors', () {
     final palette = {
       AppColors.surface,
       AppColors.paleBlue,
       AppColors.softBlue,
       AppColors.skyBlue,
       AppColors.navyBlue,
+      AppColors.graphite,
     };
     final scheme = AppTheme.light.colorScheme;
     final usedColors = {
@@ -61,8 +62,22 @@ void main() {
       scheme.inversePrimary,
       scheme.surfaceTint,
     };
-    expect(palette, hasLength(5));
+    expect(palette, hasLength(6));
     expect(usedColors.difference(palette), isEmpty);
+  });
+
+  test('graphite text keeps WCAG AA contrast on every colored surface', () {
+    for (final background in const [
+      AppColors.surface,
+      AppColors.paleBlue,
+      AppColors.softBlue,
+      AppColors.skyBlue,
+    ]) {
+      final light = background.computeLuminance();
+      final dark = AppColors.graphite.computeLuminance();
+      final contrast = (light + 0.05) / (dark + 0.05);
+      expect(contrast, greaterThanOrEqualTo(4.5));
+    }
   });
 
   test(

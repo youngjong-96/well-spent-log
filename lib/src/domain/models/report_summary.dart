@@ -1,5 +1,6 @@
 import 'budget_usage.dart';
 import 'budget_period_range.dart';
+import 'transaction_record.dart';
 
 class NamedAmount {
   const NamedAmount({required this.name, required this.amount, this.colorHex});
@@ -19,21 +20,25 @@ class DailyAmount {
 class ReportSummary {
   const ReportSummary({
     required this.totalExpense,
+    required this.previousMonthExpense,
     required this.totalIncome,
     required this.remainingBudget,
     required this.period,
     required this.budgetUsages,
     required this.dailyAmounts,
     required this.paymentMethodAmounts,
+    required this.transactions,
   });
 
   final int totalExpense;
+  final int previousMonthExpense;
   final int totalIncome;
   final int remainingBudget;
   final BudgetPeriodRange period;
   final List<BudgetUsage> budgetUsages;
   final List<DailyAmount> dailyAmounts;
   final List<NamedAmount> paymentMethodAmounts;
+  final List<TransactionRecord> transactions;
 }
 
 class AnnualSummary {

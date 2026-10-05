@@ -17,7 +17,7 @@ void main() {
   late FinanceRepository repository;
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({'month_start_day': 25});
     database = AppDatabase(
       factory: databaseFactoryFfi,
       databasePath: inMemoryDatabasePath,
@@ -38,7 +38,6 @@ void main() {
   test(
     'home includes all calendar-month spending sorted by amount, net of refunds',
     () async {
-      await repository.setMonthStartDay(25);
       final account = (await repository.listAccounts()).first;
       final category = (await repository.listCategories()).first;
       final method = (await repository.listPaymentMethods()).first;
@@ -70,6 +69,15 @@ void main() {
       final deletedId = await add(DateTime(2026, 8, 5), 888888);
       await repository.softDeleteTransaction(deletedId);
       final summary = await repository.getHomeSummary(DateTime(2026, 8, 15));
+      expect(summary.period.startDate, DateTime(2026, 8));
+      expect(summary.period.endDate, DateTime(2026, 8, 31));
+      expect(
+        summary.budgetUsages
+            .singleWhere((usage) => usage.categoryId == category.id)
+            .spentAmount
+            .amount,
+        230500,
+      );
       expect(summary.monthlyTransactions, hasLength(22));
       expect(summary.monthlyTransactions.first.amount, 21000);
       expect(summary.monthlyTransactions.last.id, refundId);
@@ -275,13 +283,13 @@ void main() {
     );
   });
 
-  test('월 보고서는 선택한 달에 시작하는 예산기간 전체를 집계한다', () async {
-    await repository.setMonthStartDay(25);
+  test('월 보고서는 선택한 달의 1일부터 말일까지 집계한다', () async {
     final account = (await repository.listAccounts()).first;
     final category = (await repository.listCategories()).first;
     final paymentMethod = (await repository.listPaymentMethods()).first;
 
     for (final (date, amount) in [
+      (DateTime(2026, 6, 20), 2000),
       (DateTime(2026, 7, 10), 3000),
       (DateTime(2026, 7, 26), 7000),
       (DateTime(2026, 8, 20), 5000),
@@ -300,12 +308,18 @@ void main() {
 
     final report = await repository.getReport(DateTime(2026, 7));
 
-    expect(report.period.startDate, DateTime(2026, 7, 25));
-    expect(report.period.endDate, DateTime(2026, 8, 24));
-    expect(report.totalExpense, 12000);
+    expect(report.period.startDate, DateTime(2026, 7));
+    expect(report.period.endDate, DateTime(2026, 7, 31));
+    expect(report.totalExpense, 10000);
+    expect(report.previousMonthExpense, 2000);
+    expect(report.transactions.map((item) => item.amount), [7000, 3000]);
     expect(
       report.dailyAmounts.map((item) => item.date),
-      containsAll([DateTime(2026, 7, 26), DateTime(2026, 8, 20)]),
+      containsAll([DateTime(2026, 7, 10), DateTime(2026, 7, 26)]),
+    );
+    expect(
+      report.dailyAmounts.map((item) => item.date),
+      isNot(contains(DateTime(2026, 8, 20))),
     );
   });
 }

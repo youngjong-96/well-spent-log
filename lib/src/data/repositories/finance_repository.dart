@@ -71,7 +71,6 @@ class FinanceRepository {
         startDate: period.startDate,
         endDate: period.endDate,
       ),
-      monthStartDay: period.monthStartDay,
       monthlyTransactions: monthly,
       month: month,
       monthlyExpense: Money(
@@ -413,11 +412,7 @@ class FinanceRepository {
 
   Future<BudgetPeriod> ensureBudgetPeriod(DateTime anchor) async {
     final db = await _database.database;
-    final monthStartDay = await _settingsStore.getMonthStartDay();
-    final range = const CalculateBudgetPeriod()(
-      anchorDate: anchor,
-      monthStartDay: monthStartDay,
-    );
+    final range = const CalculateBudgetPeriod()(anchorDate: anchor);
     final start = _dateOnly(range.startDate);
     final end = _dateOnly(range.endDate);
     final existing = await db.query(
@@ -434,7 +429,7 @@ class FinanceRepository {
       final newId = await txn.insert('budget_periods', {
         'start_date': start,
         'end_date': end,
-        'month_start_day': monthStartDay,
+        'month_start_day': 1,
         'created_at': now,
       });
       final previous = await txn.query(
@@ -467,20 +462,8 @@ class FinanceRepository {
       id: id,
       startDate: range.startDate,
       endDate: range.endDate,
-      monthStartDay: monthStartDay,
     );
   }
-
-  Future<void> setMonthStartDay(int day) async {
-    if (day < 1 || day > 31) {
-      throw ArgumentError.value(day, 'day');
-    }
-    await _settingsStore.setMonthStartDay(day);
-    await ensureBudgetPeriod(DateTime.now());
-    _notifyChanged();
-  }
-
-  Future<int> getMonthStartDay() => _settingsStore.getMonthStartDay();
 
   Future<void> setBudget({
     required int categoryId,
@@ -797,17 +780,21 @@ class FinanceRepository {
 
   Future<ReportSummary> getReport(DateTime month) async {
     final db = await _database.database;
-    final monthStartDay = await _settingsStore.getMonthStartDay();
-    final lastDay = DateTime(month.year, month.month + 1, 0).day;
-    final period = await ensureBudgetPeriod(
-      DateTime(
-        month.year,
-        month.month,
-        monthStartDay > lastDay ? lastDay : monthStartDay,
-      ),
-    );
+    final period = await ensureBudgetPeriod(DateTime(month.year, month.month));
     final start = period.startDate;
     final end = period.endDate.add(const Duration(days: 1));
+    final previousStart = DateTime(start.year, start.month - 1);
+    final previousRows = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(CASE
+        WHEN type = 'expense' THEN amount
+        WHEN type = 'refund' THEN -amount
+        ELSE 0 END), 0) AS expense
+      FROM transactions
+      WHERE deleted_at IS NULL AND occurred_at >= ? AND occurred_at < ?
+      ''',
+      [previousStart.toIso8601String(), start.toIso8601String()],
+    );
     final totalRows = await db.rawQuery(
       '''
       SELECT
@@ -862,8 +849,13 @@ class FinanceRepository {
       0,
       (sum, item) => sum + item.spentAmount.amount,
     );
+    final transactions = (await listTransactions(
+      start: start,
+      endExclusive: end,
+    )).where((record) => record.type != RecordType.income).toList();
     return ReportSummary(
       totalExpense: _asInt(totalRows.first['expense']),
+      previousMonthExpense: _asInt(previousRows.first['expense']),
       totalIncome: _asInt(totalRows.first['income']),
       remainingBudget: totalBudget - periodSpent,
       period: BudgetPeriodRange(
@@ -887,6 +879,7 @@ class FinanceRepository {
             ),
           )
           .toList(),
+      transactions: transactions,
     );
   }
 
@@ -1131,7 +1124,6 @@ class FinanceRepository {
       id: map['id']! as int,
       startDate: DateTime.parse(map['start_date']! as String),
       endDate: DateTime.parse(map['end_date']! as String),
-      monthStartDay: map['month_start_day']! as int,
     );
   }
 

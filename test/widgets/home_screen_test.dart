@@ -34,7 +34,6 @@ void main() {
                 startDate: DateTime(2026, 8),
                 endDate: DateTime(2026, 8, 31),
               ),
-              monthStartDay: 1,
               monthlyTransactions: [
                 for (var i = count; i > 0; i--)
                   TransactionRecord(

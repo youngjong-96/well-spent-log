@@ -41,86 +41,96 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               (record) => DateUtils.isSameDay(record.occurredAt, _selectedDate),
             )
             .toList();
-        return CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '달력',
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '이전 달',
-                      onPressed: () => _moveMonth(-1),
-                      icon: const Icon(Icons.chevron_left),
-                    ),
-                    SizedBox(
-                      width: 108,
-                      child: Text(
-                        formatMonth(_month),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '다음 달',
-                      onPressed: () => _moveMonth(1),
-                      icon: const Icon(Icons.chevron_right),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              sliver: SliverToBoxAdapter(
-                child: _MonthCalendar(
-                  month: _month,
-                  selectedDate: _selectedDate,
-                  records: records,
-                  onDateSelected: (date) {
-                    setState(() => _selectedDate = date);
-                  },
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-              sliver: SliverToBoxAdapter(
-                child: Text(
-                  formatDate(_selectedDate),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-            ),
-            if (selectedRecords.isEmpty)
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 120),
-                sliver: SliverToBoxAdapter(child: Text('이날의 기록이 없어요.')),
-              )
-            else
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragEnd: (details) {
+            final velocity = details.primaryVelocity ?? 0;
+            if (velocity.abs() < 200) return;
+            _moveMonth(velocity > 0 ? -1 : 1);
+          },
+          child: CustomScrollView(
+            slivers: [
               SliverPadding(
-                padding: const EdgeInsets.only(bottom: 120),
-                sliver: SliverList.separated(
-                  itemCount: selectedRecords.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 1, indent: 72),
-                  itemBuilder: (context, index) {
-                    final record = selectedRecords[index];
-                    return TransactionListTile(
-                      record: record,
-                      onEdit: () => TransactionFormSheet.edit(context, record),
-                      onDelete: () => _deleteRecord(record),
-                    );
-                  },
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+                sliver: SliverToBoxAdapter(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '달력',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                      ),
+                      TextButton(onPressed: _goToday, child: const Text('오늘')),
+                      IconButton(
+                        tooltip: '이전 달',
+                        onPressed: () => _moveMonth(-1),
+                        icon: const Icon(Icons.chevron_left),
+                      ),
+                      SizedBox(
+                        width: 108,
+                        child: Text(
+                          formatMonth(_month),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '다음 달',
+                        onPressed: () => _moveMonth(1),
+                        icon: const Icon(Icons.chevron_right),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-          ],
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                sliver: SliverToBoxAdapter(
+                  child: _MonthCalendar(
+                    month: _month,
+                    selectedDate: _selectedDate,
+                    records: records,
+                    onDateSelected: (date) {
+                      setState(() => _selectedDate = date);
+                    },
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                sliver: SliverToBoxAdapter(
+                  child: Text(
+                    formatDate(_selectedDate),
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ),
+              if (selectedRecords.isEmpty)
+                const SliverPadding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 120),
+                  sliver: SliverToBoxAdapter(child: Text('이날의 기록이 없어요.')),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.only(bottom: 120),
+                  sliver: SliverList.separated(
+                    itemCount: selectedRecords.length,
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1, indent: 72),
+                    itemBuilder: (context, index) {
+                      final record = selectedRecords[index];
+                      return TransactionListTile(
+                        record: record,
+                        onEdit: () =>
+                            TransactionFormSheet.edit(context, record),
+                        onDelete: () => _deleteRecord(record),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
         );
       },
     );
@@ -130,6 +140,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     setState(() {
       _month = DateTime(_month.year, _month.month + offset);
       _selectedDate = _month;
+    });
+  }
+
+  void _goToday() {
+    final today = DateTime.now();
+    setState(() {
+      _month = DateTime(today.year, today.month);
+      _selectedDate = DateTime(today.year, today.month, today.day);
     });
   }
 
@@ -154,20 +172,62 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     if (confirmed != true || !mounted) {
       return;
     }
-    await ref.read(financeRepositoryProvider).softDeleteTransaction(record.id);
+    await _performDelete(record);
+  }
+
+  Future<void> _performDelete(TransactionRecord record) async {
+    try {
+      await ref
+          .read(financeRepositoryProvider)
+          .softDeleteTransaction(record.id);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('삭제하지 못했어요.'),
+            action: SnackBarAction(
+              label: '다시 시도',
+              onPressed: () => _performDelete(record),
+            ),
+          ),
+        );
+      return;
+    }
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('삭제했어요'),
-        action: SnackBarAction(
-          label: '되돌리기',
-          onPressed: () =>
-              ref.read(financeRepositoryProvider).restoreTransaction(record.id),
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('삭제했어요'),
+          action: SnackBarAction(
+            label: '되돌리기',
+            onPressed: () => _restoreRecord(record),
+          ),
         ),
-      ),
-    );
+      );
+  }
+
+  Future<void> _restoreRecord(TransactionRecord record) async {
+    try {
+      await ref.read(financeRepositoryProvider).restoreTransaction(record.id);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('내역을 되돌리지 못했어요.'),
+            action: SnackBarAction(
+              label: '다시 시도',
+              onPressed: () => _restoreRecord(record),
+            ),
+          ),
+        );
+    }
   }
 }
 

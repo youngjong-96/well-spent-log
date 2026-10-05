@@ -5,13 +5,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../local/app_database.dart';
-import '../settings/settings_store.dart';
-
 class BackupService {
-  BackupService(this._appDatabase, this._settingsStore);
+  BackupService(this._appDatabase);
 
   final AppDatabase _appDatabase;
-  final SettingsStore _settingsStore;
 
   static const schemaVersion = 1;
   static const _tables = [
@@ -31,7 +28,6 @@ class BackupService {
     final data = <String, Object?>{
       'schemaVersion': schemaVersion,
       'exportedAt': DateTime.now().toIso8601String(),
-      'settings': {'monthStartDay': await _settingsStore.getMonthStartDay()},
     };
     for (final table in _tables) {
       data[table] = await _rowsForExport(db, table);
@@ -113,10 +109,6 @@ class BackupService {
         }
       }
     });
-    final settings = decoded['settings'];
-    if (settings is Map && settings['monthStartDay'] is int) {
-      await _settingsStore.setMonthStartDay(settings['monthStartDay']! as int);
-    }
   }
 
   Future<List<Map<String, Object?>>> _rowsForExport(Database db, String table) {

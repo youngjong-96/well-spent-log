@@ -29,10 +29,7 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
 });
 
 final backupServiceProvider = Provider<BackupService>((ref) {
-  return BackupService(
-    ref.watch(appDatabaseProvider),
-    ref.watch(settingsStoreProvider),
-  );
+  return BackupService(ref.watch(appDatabaseProvider));
 });
 
 final lockServiceProvider = Provider<LockService>((ref) {

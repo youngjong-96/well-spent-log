@@ -32,14 +32,8 @@ class CategoryBudgetScreen extends ConsumerWidget {
               ListTile(
                 minTileHeight: 64,
                 leading: const Icon(Icons.date_range_outlined),
-                title: const Text('예산기간 시작일'),
-                subtitle: Text(
-                  home.monthStartDay == 1
-                      ? '매월 1일'
-                      : '매월 ${home.monthStartDay}일',
-                ),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: () => _changeStartDay(context, ref),
+                title: const Text('예산기간'),
+                subtitle: const Text('매월 1일부터 말일까지'),
               ),
               const Divider(height: 24),
               Padding(
@@ -91,48 +85,6 @@ class CategoryBudgetScreen extends ConsumerWidget {
             .map((usage) => usage.budgetAmount.amount)
             .firstOrNull ??
         0;
-  }
-
-  Future<void> _changeStartDay(BuildContext context, WidgetRef ref) async {
-    final repository = ref.read(financeRepositoryProvider);
-    var selected = await repository.getMonthStartDay();
-    if (!context.mounted) {
-      return;
-    }
-    final result = await showDialog<int>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('예산기간 시작일'),
-          content: DropdownButtonFormField<int>(
-            initialValue: selected,
-            decoration: const InputDecoration(labelText: '매월 시작일'),
-            items: [
-              for (var day = 1; day <= 31; day++)
-                DropdownMenuItem(value: day, child: Text('$day일')),
-            ],
-            onChanged: (value) {
-              if (value != null) {
-                setDialogState(() => selected = value);
-              }
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, selected),
-              child: const Text('저장'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (result != null) {
-      await repository.setMonthStartDay(result);
-    }
   }
 
   Future<void> _editBudget(

@@ -121,13 +121,30 @@ class _AppShellState extends ConsumerState<AppShell> {
           content: const Text('저장했어요'),
           action: SnackBarAction(
             label: '되돌리기',
-            onPressed: () {
-              ref
-                  .read(financeRepositoryProvider)
-                  .softDeleteTransaction(transactionId);
-            },
+            onPressed: () => _undoCreatedTransaction(transactionId),
           ),
         ),
       );
+  }
+
+  Future<void> _undoCreatedTransaction(int transactionId) async {
+    try {
+      await ref
+          .read(financeRepositoryProvider)
+          .softDeleteTransaction(transactionId);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('저장을 되돌리지 못했어요.'),
+            action: SnackBarAction(
+              label: '다시 시도',
+              onPressed: () => _undoCreatedTransaction(transactionId),
+            ),
+          ),
+        );
+    }
   }
 }

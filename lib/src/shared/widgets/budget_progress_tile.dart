@@ -68,7 +68,7 @@ class BudgetProgressTile extends StatelessWidget {
                   Text(
                     valueText,
                     style: textTheme.bodyMedium?.copyWith(
-                      color: progressColor,
+                      color: AppColors.textPrimary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

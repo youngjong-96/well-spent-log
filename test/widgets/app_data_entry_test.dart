@@ -21,7 +21,9 @@ import 'package:well_spent_log/src/domain/models/expense_template.dart';
 import 'package:well_spent_log/src/domain/models/payment_method.dart';
 import 'package:well_spent_log/src/domain/models/transaction_draft.dart';
 import 'package:well_spent_log/src/domain/models/transaction_record.dart';
+import 'package:well_spent_log/src/domain/models/transaction_type.dart';
 import 'package:well_spent_log/src/features/manage/accounts_payment_screen.dart';
+import 'package:well_spent_log/src/shared/formatters.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -99,6 +101,11 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.text('5,000'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('lunch'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('lunch'), findsOneWidget);
     await tester.enterText(find.byType(TextFormField).first, '7000');
     final save = find.byType(FilledButton);
@@ -111,6 +118,7 @@ void main() {
     expect(repository.updatedDraft!.occurredAt, record.occurredAt);
     expect(repository.savedTransactions, isEmpty);
     expect(find.byType(TransactionFormSheet), findsNothing);
+    expect(find.text('수정했어요'), findsOneWidget);
   });
 
   testWidgets('계좌 저장 후 목록 갱신에서 위젯 트리 예외가 발생하지 않는다', (tester) async {
@@ -140,6 +148,61 @@ void main() {
 
     expect(find.text('테스트 통장'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('저장 실패 시 입력을 유지하고 다시 시도 동작을 제공한다', (tester) async {
+    final repository = _FakeAccountsRepository()..failNextSave = true;
+    addTearDown(repository.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [financeRepositoryProvider.overrideWithValue(repository)],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showModalBottomSheet<int>(
+                  context: context,
+                  isScrollControlled: true,
+                  useSafeArea: true,
+                  builder: (_) => const TransactionFormSheet(
+                    transactionType: TransactionType.expense,
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, '+1,000'));
+    await tester.tap(find.widgetWithText(OutlinedButton, '+5,000'));
+    expect(find.text('6,000'), findsOneWidget);
+    final yesterdayButton = find.widgetWithText(OutlinedButton, '어제');
+    await tester.scrollUntilVisible(
+      yesterdayButton,
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    tester.widget<OutlinedButton>(yesterdayButton).onPressed!();
+    await tester.pump();
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    expect(find.text(formatShortDate(yesterday)), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '저장'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TransactionFormSheet), findsOneWidget);
+    expect(find.text('저장하지 못했어요. 다시 시도해 주세요.'), findsOneWidget);
+    expect(find.text('다시 시도'), findsOneWidget);
+    tester.widget<SnackBarAction>(find.byType(SnackBarAction)).onPressed();
+    await tester.pumpAndSettle();
+    expect(find.byType(TransactionFormSheet), findsNothing);
+    expect(repository.savedTransactions.single.amount, 6000);
   });
 
   testWidgets('지출 저장 후 시트 종료와 데이터 갱신이 정상 동작한다', (tester) async {
@@ -188,6 +251,10 @@ void main() {
     expect(tester.takeException(), isNull);
 
     final saveButton = find.widgetWithText(FilledButton, '저장');
+    expect(
+      find.descendant(of: find.byType(ListView), matching: saveButton),
+      findsNothing,
+    );
     await tester.ensureVisible(saveButton);
     await tester.pump();
     tester.widget<FilledButton>(saveButton).onPressed!();
@@ -221,6 +288,7 @@ class _FakeAccountsRepository extends FinanceRepository {
   final _controller = StreamController<int>.broadcast();
   int? updatedId;
   TransactionDraft? updatedDraft;
+  bool failNextSave = false;
   @override
   Future<void> updateTransaction(int id, TransactionDraft draft) async {
     updatedId = id;
@@ -307,6 +375,10 @@ class _FakeAccountsRepository extends FinanceRepository {
 
   @override
   Future<int> addTransaction(TransactionDraft draft) async {
+    if (failNextSave) {
+      failNextSave = false;
+      throw StateError('test save failure');
+    }
     savedTransactions.add(draft);
     _controller.add(savedTransactions.length);
     return savedTransactions.length;

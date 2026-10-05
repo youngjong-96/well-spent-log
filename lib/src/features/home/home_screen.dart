@@ -223,7 +223,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (confirmed != true || !mounted) {
       return;
     }
-    await ref.read(financeRepositoryProvider).softDeleteTransaction(record.id);
+    await _deleteRecord(record);
+  }
+
+  Future<void> _deleteRecord(TransactionRecord record) async {
+    try {
+      await ref
+          .read(financeRepositoryProvider)
+          .softDeleteTransaction(record.id);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('삭제하지 못했어요.'),
+            action: SnackBarAction(
+              label: '다시 시도',
+              onPressed: () => _deleteRecord(record),
+            ),
+          ),
+        );
+      return;
+    }
     if (!mounted) {
       return;
     }
@@ -234,12 +256,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           content: const Text('삭제했어요'),
           action: SnackBarAction(
             label: '되돌리기',
-            onPressed: () {
-              ref.read(financeRepositoryProvider).restoreTransaction(record.id);
-            },
+            onPressed: () => _restoreRecord(record),
           ),
         ),
       );
+  }
+
+  Future<void> _restoreRecord(TransactionRecord record) async {
+    try {
+      await ref.read(financeRepositoryProvider).restoreTransaction(record.id);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('내역을 되돌리지 못했어요.'),
+            action: SnackBarAction(
+              label: '다시 시도',
+              onPressed: () => _restoreRecord(record),
+            ),
+          ),
+        );
+    }
   }
 }
 
@@ -272,7 +311,7 @@ class _ExpenseSummary extends StatelessWidget {
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                   fontSize: 30,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ),

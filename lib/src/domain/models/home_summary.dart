@@ -10,7 +10,6 @@ class HomeSummary {
     required this.monthlyExpense,
     required this.budgetUsages,
     required this.period,
-    required this.monthStartDay,
     required this.monthlyTransactions,
   });
 
@@ -19,7 +18,6 @@ class HomeSummary {
   final Money monthlyExpense;
   final List<BudgetUsage> budgetUsages;
   final BudgetPeriodRange period;
-  final int monthStartDay;
   final List<TransactionRecord> monthlyTransactions;
 
   static final empty = HomeSummary(
@@ -31,7 +29,6 @@ class HomeSummary {
       startDate: DateTime(2000),
       endDate: DateTime(2000),
     ),
-    monthStartDay: 1,
     monthlyTransactions: const [],
   );
 }

@@ -5,41 +5,25 @@ void main() {
   const calculate = CalculateBudgetPeriod();
 
   group('CalculateBudgetPeriod', () {
-    test('uses the first day for a calendar month budget', () {
-      final range = calculate(
-        anchorDate: DateTime(2026, 7, 30),
-        monthStartDay: 1,
-      );
+    test('uses the first and last day of the anchor month', () {
+      final range = calculate(anchorDate: DateTime(2026, 7, 30));
 
       expect(range.startDate, DateTime(2026, 7));
       expect(range.endDate, DateTime(2026, 7, 31));
     });
 
-    test('moves to the previous period before the configured start day', () {
-      final range = calculate(
-        anchorDate: DateTime(2026, 7, 20),
-        monthStartDay: 25,
-      );
+    test('uses the leap-day month end in February', () {
+      final range = calculate(anchorDate: DateTime(2028, 2, 14));
 
-      expect(range.startDate, DateTime(2026, 6, 25));
-      expect(range.endDate, DateTime(2026, 7, 24));
+      expect(range.startDate, DateTime(2028, 2));
+      expect(range.endDate, DateTime(2028, 2, 29));
     });
 
-    test('clamps a day that does not exist in a short month', () {
-      final range = calculate(
-        anchorDate: DateTime(2027, 2, 28),
-        monthStartDay: 31,
-      );
+    test('normalizes the time component of the anchor date', () {
+      final range = calculate(anchorDate: DateTime(2026, 4, 1, 23, 59, 59));
 
-      expect(range.startDate, DateTime(2027, 2, 28));
-      expect(range.endDate, DateTime(2027, 3, 30));
-    });
-
-    test('rejects a start day outside the supported range', () {
-      expect(
-        () => calculate(anchorDate: DateTime(2026, 7, 30), monthStartDay: 0),
-        throwsArgumentError,
-      );
+      expect(range.startDate, DateTime(2026, 4));
+      expect(range.endDate, DateTime(2026, 4, 30));
     });
   });
 }
