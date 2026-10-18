@@ -9,7 +9,16 @@ import '../../shared/formatters.dart';
 import '../../shared/widgets/transaction_list_tile.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
-  const CalendarScreen({super.key});
+  const CalendarScreen({
+    super.key,
+    this.month,
+    this.onMonthChanged,
+    this.showTitle = true,
+  });
+
+  final DateTime? month;
+  final ValueChanged<DateTime>? onMonthChanged;
+  final bool showTitle;
 
   @override
   ConsumerState<CalendarScreen> createState() => _CalendarScreenState();
@@ -23,8 +32,23 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   void initState() {
     super.initState();
     final today = DateTime.now();
-    _month = DateTime(today.year, today.month);
-    _selectedDate = DateTime(today.year, today.month, today.day);
+    _month = widget.month == null
+        ? DateTime(today.year, today.month)
+        : DateTime(widget.month!.year, widget.month!.month);
+    _selectedDate = DateUtils.isSameMonth(_month, today)
+        ? DateTime(today.year, today.month, today.day)
+        : _month;
+  }
+
+  @override
+  void didUpdateWidget(covariant CalendarScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final requestedMonth = widget.month;
+    if (requestedMonth != null &&
+        !DateUtils.isSameMonth(requestedMonth, _month)) {
+      _month = DateTime(requestedMonth.year, requestedMonth.month);
+      _selectedDate = _month;
+    }
   }
 
   @override
@@ -55,12 +79,15 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 sliver: SliverToBoxAdapter(
                   child: Row(
                     children: [
-                      Expanded(
-                        child: Text(
-                          '달력',
-                          style: Theme.of(context).textTheme.headlineMedium,
-                        ),
-                      ),
+                      if (widget.showTitle)
+                        Expanded(
+                          child: Text(
+                            '달력',
+                            style: Theme.of(context).textTheme.headlineMedium,
+                          ),
+                        )
+                      else
+                        const Spacer(),
                       TextButton(onPressed: _goToday, child: const Text('오늘')),
                       IconButton(
                         tooltip: '이전 달',
@@ -141,6 +168,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       _month = DateTime(_month.year, _month.month + offset);
       _selectedDate = _month;
     });
+    widget.onMonthChanged?.call(_month);
   }
 
   void _goToday() {
@@ -149,6 +177,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       _month = DateTime(today.year, today.month);
       _selectedDate = DateTime(today.year, today.month, today.day);
     });
+    widget.onMonthChanged?.call(_month);
   }
 
   Future<void> _deleteRecord(TransactionRecord record) async {

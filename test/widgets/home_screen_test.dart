@@ -4,8 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:well_spent_log/src/app/theme/app_theme.dart';
 import 'package:well_spent_log/src/application/providers.dart';
-import 'package:well_spent_log/src/domain/models/home_summary.dart';
 import 'package:well_spent_log/src/domain/models/budget_period_range.dart';
+import 'package:well_spent_log/src/domain/models/budget_usage.dart';
+import 'package:well_spent_log/src/domain/models/home_summary.dart';
 import 'package:well_spent_log/src/domain/models/money.dart';
 import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 import 'package:well_spent_log/src/features/home/home_screen.dart';
@@ -14,84 +15,91 @@ import 'package:well_spent_log/src/shared/widgets/transaction_list_tile.dart';
 void main() {
   setUpAll(() => initializeDateFormatting('ko_KR'));
 
-  testWidgets(
-    'home paginates ten records and clamps page when records disappear',
-    (tester) async {
-      tester.view.physicalSize = const Size(430, 2400);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      var count = 21;
-      final container = ProviderContainer(
-        overrides: [
-          homeSummaryProvider.overrideWith(
-            (ref) async => HomeSummary(
-              totalBalance: const Money(999999),
-              monthlyExpense: const Money(231000),
-              month: DateTime(2026, 8),
-              budgetUsages: const [],
-              period: BudgetPeriodRange(
-                startDate: DateTime(2026, 8),
-                endDate: DateTime(2026, 8, 31),
-              ),
-              monthlyTransactions: [
-                for (var i = count; i > 0; i--)
-                  TransactionRecord(
-                    id: i,
-                    type: RecordType.expense,
-                    occurredAt: DateTime(2026, 8, 1),
-                    amount: i * 1000,
-                    memo: 'record $i',
-                    accountId: 1,
-                    accountName: 'cash',
-                  ),
-              ],
+  testWidgets('홈은 요약과 예산만 표시하고 카테고리 내역을 바로 연다', (tester) async {
+    tester.view.physicalSize = const Size(430, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    int? openedCategory;
+    final month = DateTime(2026, 8);
+    final summary = HomeSummary(
+      totalBalance: const Money(999999),
+      monthlyExpense: const Money(35000),
+      month: month,
+      budgetUsages: const [
+        BudgetUsage(
+          categoryId: 1,
+          categoryName: '식비',
+          spentAmount: Money(30000),
+          budgetAmount: Money(100000),
+          colorHex: '#84B6E2',
+        ),
+      ],
+      period: BudgetPeriodRange(
+        startDate: month,
+        endDate: DateTime(2026, 8, 31),
+      ),
+      monthlyTransactions: [
+        TransactionRecord(
+          id: 1,
+          type: RecordType.expense,
+          occurredAt: DateTime(2026, 8, 2),
+          amount: 30000,
+          memo: '장보기',
+          accountId: 1,
+          accountName: '현금',
+          categoryId: 1,
+          categoryName: '식비',
+        ),
+        TransactionRecord(
+          id: 2,
+          type: RecordType.expense,
+          occurredAt: DateTime(2026, 8, 1),
+          amount: 5000,
+          memo: '버스',
+          accountId: 1,
+          accountName: '현금',
+          categoryId: 2,
+          categoryName: '교통',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [homeSummaryProvider.overrideWith((ref) async => summary)],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: HomeScreen(
+              onOpenCategoryDetails: (id) => openedCategory = id,
             ),
           ),
-        ],
-      );
-      addTearDown(container.dispose);
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(
-            theme: AppTheme.light,
-            home: const Scaffold(body: HomeScreen()),
-          ),
         ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('이번 달 지출 합계'), findsOneWidget);
-      expect(find.text('231,000원'), findsOneWidget);
-      expect(find.text('현재 총잔액'), findsNothing);
-      expect(find.byType(TransactionListTile), findsNWidgets(10));
-      expect(find.text('record 21'), findsOneWidget);
-      Future<void> next() async {
-        await tester.scrollUntilVisible(find.text('다음'), 400);
-        await tester.tap(find.text('다음'));
-        await tester.pumpAndSettle();
-      }
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(find.text('1 / 3 페이지'), 400);
-      await next();
-      expect(find.text('2 / 3 페이지'), findsOneWidget);
-      expect(find.byType(TransactionListTile), findsNWidgets(10));
-      expect(find.text('record 11'), findsOneWidget);
-      await next();
-      expect(find.text('3 / 3 페이지'), findsOneWidget);
-      expect(find.byType(TransactionListTile), findsOneWidget);
-      expect(find.text('record 1'), findsOneWidget);
-      count = 20;
-      container.invalidate(homeSummaryProvider);
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('2 / 2 페이지'), 400);
-      expect(find.text('2 / 2 페이지'), findsOneWidget);
-      count = 0;
-      container.invalidate(homeSummaryProvider);
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('이번 달 지출 내역이 없어요.'), 400);
-      expect(find.byType(TransactionListTile), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
+    expect(find.text('이번 달 지출 합계'), findsOneWidget);
+    expect(find.text('35,000원'), findsOneWidget);
+    expect(find.text('이번 달 지출 내역'), findsNothing);
+    expect(find.byType(TransactionListTile), findsNothing);
+    expect(find.text('30%'), findsOneWidget);
+
+    await tester.tap(find.text('식비'));
+    await tester.pump();
+    expect(find.text('30,000원 / 100,000원'), findsOneWidget);
+
+    await tester.tap(find.text('내역 보기'));
+    await tester.pumpAndSettle();
+    expect(find.text('장보기'), findsOneWidget);
+    expect(find.text('버스'), findsNothing);
+    expect(find.text('전체 내역에서 보기'), findsOneWidget);
+
+    await tester.tap(find.text('전체 내역에서 보기'));
+    await tester.pumpAndSettle();
+    expect(openedCategory, 1);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

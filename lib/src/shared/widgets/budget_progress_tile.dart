@@ -9,12 +9,14 @@ class BudgetProgressTile extends StatelessWidget {
     required this.usage,
     required this.showAmount,
     required this.onToggleDisplay,
+    this.onViewDetails,
     super.key,
   });
 
   final BudgetUsage usage;
   final bool showAmount;
   final VoidCallback onToggleDisplay;
+  final VoidCallback? onViewDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +90,17 @@ class BudgetProgressTile extends StatelessWidget {
               if (usage.budgetAmount.amount == 0) ...[
                 const SizedBox(height: 6),
                 Text('예산을 설정해 주세요', style: textTheme.bodySmall),
+              ],
+              if (onViewDetails != null) ...[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: onViewDetails,
+                    icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                    label: const Text('내역 보기'),
+                  ),
+                ),
               ],
             ],
           ),

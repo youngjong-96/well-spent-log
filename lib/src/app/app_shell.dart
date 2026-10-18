@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
 import '../domain/models/transaction_type.dart';
-import '../features/calendar/calendar_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/manage/manage_screen.dart';
 import '../features/report/report_screen.dart';
 import '../features/transaction/transaction_form_sheet.dart';
+import '../features/transactions/transactions_screen.dart';
 import '../shared/widgets/quick_entry_fab.dart';
 import '../shared/widgets/transaction_type_sheet.dart';
 
@@ -20,13 +20,19 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int _selectedIndex = 0;
+  late final TransactionsScreenController _transactionsController;
 
-  static const _screens = [
-    HomeScreen(),
-    CalendarScreen(),
-    ReportScreen(),
-    ManageScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _transactionsController = TransactionsScreenController();
+  }
+
+  @override
+  void dispose() {
+    _transactionsController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,9 +61,15 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       );
     }
+    final screens = [
+      HomeScreen(onOpenCategoryDetails: _openCategoryDetails),
+      TransactionsScreen(controller: _transactionsController),
+      const ReportScreen(),
+      const ManageScreen(),
+    ];
     return Scaffold(
       body: SafeArea(
-        child: IndexedStack(index: _selectedIndex, children: _screens),
+        child: IndexedStack(index: _selectedIndex, children: screens),
       ),
       floatingActionButton: QuickEntryFab(
         onPressed: () => _showTransactionTypeSheet(context),
@@ -74,9 +86,9 @@ class _AppShellState extends ConsumerState<AppShell> {
             label: '홈',
           ),
           NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
-            label: '달력',
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: '내역',
           ),
           NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),
@@ -91,6 +103,11 @@ class _AppShellState extends ConsumerState<AppShell> {
         ],
       ),
     );
+  }
+
+  void _openCategoryDetails(int categoryId) {
+    _transactionsController.openCategory(categoryId);
+    setState(() => _selectedIndex = 1);
   }
 
   Future<void> _showTransactionTypeSheet(BuildContext context) async {

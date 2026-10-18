@@ -13,7 +13,7 @@ import 'package:well_spent_log/src/shared/formatters.dart';
 void main() {
   setUpAll(() => initializeDateFormatting('ko_KR'));
 
-  testWidgets('월간 보고서는 요약 카드, 막대 툴팁, 표 보기를 제공한다', (tester) async {
+  testWidgets('월간 보고서는 표를 기본으로 보여주고 차트 보기로 전환한다', (tester) async {
     tester.view.physicalSize = const Size(430, 3000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -87,18 +87,20 @@ void main() {
     final barTooltip = find.byWidgetPredicate(
       (widget) => widget is Tooltip && widget.message == tooltipMessage,
     );
+    expect(find.text('지출 상세'), findsNothing);
+    expect(find.text(formatWon(10000)), findsWidgets);
+    expect(barTooltip, findsNothing);
+
+    await tester.tap(find.text('차트 보기').first);
+    await tester.pumpAndSettle();
     expect(barTooltip, findsOneWidget);
     await tester.tap(barTooltip);
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text(tooltipMessage), findsOneWidget);
 
-    final amountBefore = find.text(formatWon(10000)).evaluate().length;
     await tester.tap(find.text('표로 보기').first);
     await tester.pumpAndSettle();
-    expect(
-      find.text(formatWon(10000)).evaluate().length,
-      greaterThan(amountBefore),
-    );
+    expect(find.text(formatWon(10000)), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 }

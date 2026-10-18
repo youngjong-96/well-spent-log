@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../application/providers.dart';
+import '../../domain/models/budget_usage.dart';
 import '../transaction/transaction_form_sheet.dart';
 import '../../domain/models/transaction_record.dart';
 import '../../shared/formatters.dart';
@@ -11,7 +12,9 @@ import '../../shared/widgets/budget_progress_tile.dart';
 import '../../shared/widgets/transaction_list_tile.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({this.onOpenCategoryDetails, super.key});
+
+  final ValueChanged<int>? onOpenCategoryDetails;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -19,9 +22,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final Set<int> _amountCategoryIds = {};
-  int _page = 0;
-  DateTime? _displayedMonth;
-  final _listHeadingKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
@@ -33,16 +33,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         error: (error, stackTrace) =>
             _ErrorBody(onRetry: () => ref.invalidate(homeSummaryProvider)),
         data: (data) {
-          if (_displayedMonth != data.month) {
-            _displayedMonth = data.month;
-            _page = 0;
-          }
-          final pageCount = (data.monthlyTransactions.length / 10).ceil();
-          _page = _page.clamp(0, pageCount == 0 ? 0 : pageCount - 1);
-          final pageRecords = data.monthlyTransactions
-              .skip(_page * 10)
-              .take(10)
-              .toList();
           final periodText =
               '${DateFormat('M.d').format(data.period.startDate)}'
               ' - ${DateFormat('M.d').format(data.period.endDate)}';
@@ -112,76 +102,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             }
                           });
                         },
+                        onViewDetails: () => _showCategoryDetails(usage),
                       );
                     },
                   ),
                 ),
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    key: _listHeadingKey,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const _SectionTitle(title: '이번 달 지출 내역'),
-                      const SizedBox(height: 4),
-                      Text(
-                        '금액 높은 순 · 총 ${data.monthlyTransactions.length}건',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
+              const SliverPadding(
+                padding: EdgeInsets.only(bottom: 120),
+                sliver: SliverToBoxAdapter(child: SizedBox.shrink()),
               ),
-              if (data.monthlyTransactions.isEmpty)
-                const SliverPadding(
-                  padding: EdgeInsets.fromLTRB(16, 20, 16, 120),
-                  sliver: SliverToBoxAdapter(child: Text('이번 달 지출 내역이 없어요.')),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.only(top: 8),
-                  sliver: SliverList.separated(
-                    itemCount: pageRecords.length,
-                    separatorBuilder: (context, index) =>
-                        const Divider(height: 1, indent: 72),
-                    itemBuilder: (context, index) {
-                      final record = pageRecords[index];
-                      return TransactionListTile(
-                        record: record,
-                        onEdit: () =>
-                            TransactionFormSheet.edit(context, record),
-                        onDelete: () => _confirmDelete(record),
-                      );
-                    },
-                  ),
-                ),
-              if (pageCount > 0)
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
-                  sliver: SliverToBoxAdapter(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        TextButton.icon(
-                          onPressed: _page > 0
-                              ? () => _changePage(_page - 1)
-                              : null,
-                          icon: const Icon(Icons.chevron_left),
-                          label: const Text('이전'),
-                        ),
-                        Text('${_page + 1} / $pageCount 페이지'),
-                        TextButton.icon(
-                          onPressed: _page + 1 < pageCount
-                              ? () => _changePage(_page + 1)
-                              : null,
-                          icon: const Icon(Icons.chevron_right),
-                          label: const Text('다음'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
             ],
           );
         },
@@ -189,17 +118,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _changePage(int page) {
-    setState(() => _page = page);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final heading = _listHeadingKey.currentContext;
-      if (heading != null) {
-        Scrollable.ensureVisible(
-          heading,
-          duration: const Duration(milliseconds: 200),
-        );
-      }
-    });
+  Future<void> _showCategoryDetails(BudgetUsage usage) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheetContext) => _CategoryDetailsSheet(
+        categoryId: usage.categoryId,
+        onDelete: _confirmDelete,
+        onOpenFullList: widget.onOpenCategoryDetails == null
+            ? null
+            : () {
+                Navigator.pop(sheetContext);
+                widget.onOpenCategoryDetails!(usage.categoryId);
+              },
+      ),
+    );
   }
 
   Future<void> _confirmDelete(TransactionRecord record) async {
@@ -279,6 +214,119 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         );
     }
+  }
+}
+
+class _CategoryDetailsSheet extends ConsumerWidget {
+  const _CategoryDetailsSheet({
+    required this.categoryId,
+    required this.onDelete,
+    required this.onOpenFullList,
+  });
+
+  final int categoryId;
+  final Future<void> Function(TransactionRecord) onDelete;
+  final VoidCallback? onOpenFullList;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summary = ref.watch(homeSummaryProvider);
+    return FractionallySizedBox(
+      heightFactor: 0.9,
+      child: summary.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, stackTrace) => Center(
+          child: OutlinedButton.icon(
+            onPressed: () => ref.invalidate(homeSummaryProvider),
+            icon: const Icon(Icons.refresh),
+            label: const Text('내역 다시 불러오기'),
+          ),
+        ),
+        data: (data) {
+          BudgetUsage? usage;
+          for (final item in data.budgetUsages) {
+            if (item.categoryId == categoryId) {
+              usage = item;
+              break;
+            }
+          }
+          if (usage == null) {
+            return const Center(child: Text('카테고리 정보를 찾을 수 없어요.'));
+          }
+          final records =
+              data.monthlyTransactions
+                  .where(
+                    (record) =>
+                        record.categoryId == categoryId &&
+                        record.type != RecordType.income,
+                  )
+                  .toList()
+                ..sort((a, b) {
+                  final date = b.occurredAt.compareTo(a.occurredAt);
+                  return date != 0 ? date : b.id.compareTo(a.id);
+                });
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      usage.categoryName,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${data.month.month}월 사용 ${usage.spentAmount.format()} · '
+                      '예산 ${usage.budgetAmount.format()} · ${usage.usedPercent}%',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${data.month.month}월 1일–${data.period.endDate.day}일 · '
+                      '총 ${records.length}건',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: records.isEmpty
+                    ? const Center(child: Text('이번 달에 해당 카테고리 내역이 없어요.'))
+                    : ListView.separated(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        itemCount: records.length,
+                        separatorBuilder: (context, index) =>
+                            const Divider(height: 1, indent: 72),
+                        itemBuilder: (context, index) {
+                          final record = records[index];
+                          return TransactionListTile(
+                            record: record,
+                            onEdit: () =>
+                                TransactionFormSheet.edit(context, record),
+                            onDelete: () => onDelete(record),
+                          );
+                        },
+                      ),
+              ),
+              if (onOpenFullList != null)
+                SafeArea(
+                  top: false,
+                  minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: FilledButton.icon(
+                    onPressed: onOpenFullList,
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('전체 내역에서 보기'),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
   }
 }
 

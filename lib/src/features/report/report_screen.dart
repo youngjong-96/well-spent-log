@@ -8,12 +8,8 @@ import '../../application/providers.dart';
 import '../../domain/models/report_summary.dart';
 import '../../domain/models/transaction_record.dart';
 import '../../shared/formatters.dart';
-import '../../shared/widgets/budget_progress_tile.dart';
-import '../../shared/widgets/transaction_list_tile.dart';
 
 enum _ReportMode { month, year }
-
-enum _ReportSort { amountDesc, dateDesc, dateAsc }
 
 class ReportScreen extends ConsumerStatefulWidget {
   const ReportScreen({super.key});
@@ -25,11 +21,6 @@ class ReportScreen extends ConsumerStatefulWidget {
 class _ReportScreenState extends ConsumerState<ReportScreen> {
   late DateTime _month;
   _ReportMode _mode = _ReportMode.month;
-  final Set<int> _amountCategoryIds = {};
-  String _reportQuery = '';
-  String? _categoryFilter;
-  String? _paymentFilter;
-  _ReportSort _reportSort = _ReportSort.amountDesc;
 
   @override
   void initState() {
@@ -81,26 +72,7 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
           ),
         ),
         if (_mode == _ReportMode.month)
-          _MonthlyReport(
-            month: _month,
-            amountCategoryIds: _amountCategoryIds,
-            onToggleCategory: (id) {
-              setState(() {
-                if (!_amountCategoryIds.add(id)) {
-                  _amountCategoryIds.remove(id);
-                }
-              });
-            },
-            query: _reportQuery,
-            categoryFilter: _categoryFilter,
-            paymentFilter: _paymentFilter,
-            sort: _reportSort,
-            onQueryChanged: (value) => setState(() => _reportQuery = value),
-            onCategoryChanged: (value) =>
-                setState(() => _categoryFilter = value),
-            onPaymentChanged: (value) => setState(() => _paymentFilter = value),
-            onSortChanged: (value) => setState(() => _reportSort = value),
-          )
+          _MonthlyReport(month: _month)
         else
           _AnnualReport(year: _month.year),
       ],
@@ -112,9 +84,6 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
       _month = _mode == _ReportMode.month
           ? DateTime(_month.year, _month.month + offset)
           : DateTime(_month.year + offset, _month.month);
-      _reportQuery = '';
-      _categoryFilter = null;
-      _paymentFilter = null;
     });
   }
 }
@@ -159,31 +128,9 @@ class _PeriodNavigator extends StatelessWidget {
 }
 
 class _MonthlyReport extends ConsumerWidget {
-  const _MonthlyReport({
-    required this.month,
-    required this.amountCategoryIds,
-    required this.onToggleCategory,
-    required this.query,
-    required this.categoryFilter,
-    required this.paymentFilter,
-    required this.sort,
-    required this.onQueryChanged,
-    required this.onCategoryChanged,
-    required this.onPaymentChanged,
-    required this.onSortChanged,
-  });
+  const _MonthlyReport({required this.month});
 
   final DateTime month;
-  final Set<int> amountCategoryIds;
-  final ValueChanged<int> onToggleCategory;
-  final String query;
-  final String? categoryFilter;
-  final String? paymentFilter;
-  final _ReportSort sort;
-  final ValueChanged<String> onQueryChanged;
-  final ValueChanged<String?> onCategoryChanged;
-  final ValueChanged<String?> onPaymentChanged;
-  final ValueChanged<_ReportSort> onSortChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -202,41 +149,6 @@ class _MonthlyReport extends ConsumerWidget {
         ),
       ),
       data: (data) {
-        final categoryNames =
-            data.transactions
-                .map((record) => record.categoryName)
-                .whereType<String>()
-                .toSet()
-                .toList()
-              ..sort();
-        final paymentNames =
-            data.transactions
-                .map(_paymentName)
-                .where((name) => name.isNotEmpty)
-                .toSet()
-                .toList()
-              ..sort();
-        final effectiveCategory = categoryNames.contains(categoryFilter)
-            ? categoryFilter
-            : null;
-        final effectivePayment = paymentNames.contains(paymentFilter)
-            ? paymentFilter
-            : null;
-        final normalizedQuery = query.trim().toLowerCase();
-        final filteredTransactions = data.transactions.where((record) {
-          final matchesQuery =
-              normalizedQuery.isEmpty ||
-              record.memo.toLowerCase().contains(normalizedQuery) ||
-              (record.categoryName ?? '').toLowerCase().contains(
-                normalizedQuery,
-              ) ||
-              _paymentName(record).toLowerCase().contains(normalizedQuery);
-          return matchesQuery &&
-              (effectiveCategory == null ||
-                  record.categoryName == effectiveCategory) &&
-              (effectivePayment == null ||
-                  _paymentName(record) == effectivePayment);
-        }).toList()..sort((a, b) => _compareTransactions(a, b, sort));
         final dates = List.generate(
           data.period.endDate.difference(data.period.startDate).inDays + 1,
           (index) => data.period.startDate.add(Duration(days: index)),
@@ -251,6 +163,31 @@ class _MonthlyReport extends ConsumerWidget {
         ];
         final dailyLabels = [
           for (final date in dates) '${date.month}/${date.day}',
+        ];
+        final categoryTotals = <String, int>{};
+        for (final record in data.transactions) {
+          if (record.type == RecordType.income) continue;
+          final category = record.categoryName ?? '미분류';
+          final amount = record.type == RecordType.refund
+              ? -record.amount
+              : record.amount;
+          categoryTotals.update(
+            category,
+            (current) => current + amount,
+            ifAbsent: () => amount,
+          );
+        }
+        final categoryEntries = categoryTotals.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        final categoryAmounts = [
+          for (final entry in categoryEntries) math.max(0, entry.value),
+        ];
+        final categoryLabels = [for (final entry in categoryEntries) entry.key];
+        final paymentValues = [
+          for (final item in data.paymentMethodAmounts) item.amount,
+        ];
+        final paymentLabels = [
+          for (final item in data.paymentMethodAmounts) item.name,
         ];
         return SliverList.list(
           children: [
@@ -273,216 +210,36 @@ class _MonthlyReport extends ConsumerWidget {
             const _ReportSectionTitle(title: '일별 지출 추이'),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-              child: Column(
-                children: [
-                  _BarChart(
-                    values: dailyValues,
-                    labels: dailyLabels,
-                    color: AppColors.primary,
-                    semanticsLabel: '일별 지출 추이',
-                  ),
-                  _ChartDataTable(values: dailyValues, labels: dailyLabels),
-                ],
+              child: _TableChartView(
+                values: dailyValues,
+                labels: dailyLabels,
+                color: AppColors.primary,
+                semanticsLabel: '일별 지출 추이',
               ),
             ),
-            const _ReportSectionTitle(title: '카테고리별 예산'),
+            const _ReportSectionTitle(title: '카테고리별 지출'),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-              child: Column(
-                children: [
-                  for (
-                    var index = 0;
-                    index < data.budgetUsages.length;
-                    index++
-                  ) ...[
-                    BudgetProgressTile(
-                      usage: data.budgetUsages[index],
-                      showAmount: amountCategoryIds.contains(
-                        data.budgetUsages[index].categoryId,
-                      ),
-                      onToggleDisplay: () =>
-                          onToggleCategory(data.budgetUsages[index].categoryId),
-                    ),
-                    if (index != data.budgetUsages.length - 1)
-                      const SizedBox(height: 8),
-                  ],
-                ],
+              child: _TableChartView(
+                values: categoryAmounts,
+                labels: categoryLabels,
+                color: AppColors.info,
+                semanticsLabel: '카테고리별 지출',
               ),
             ),
             const _ReportSectionTitle(title: '결제수단별 지출'),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-              child: _NamedAmountList(items: data.paymentMethodAmounts),
-            ),
-            const _ReportSectionTitle(title: '지출 상세'),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: _ReportListControls(
-                key: ValueKey(month),
-                query: query,
-                categoryNames: categoryNames,
-                paymentNames: paymentNames,
-                categoryFilter: effectiveCategory,
-                paymentFilter: effectivePayment,
-                sort: sort,
-                onQueryChanged: onQueryChanged,
-                onCategoryChanged: onCategoryChanged,
-                onPaymentChanged: onPaymentChanged,
-                onSortChanged: onSortChanged,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+              child: _TableChartView(
+                values: paymentValues,
+                labels: paymentLabels,
+                color: AppColors.primary,
+                semanticsLabel: '결제수단별 지출',
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Text(
-                '검색 결과 ${filteredTransactions.length}건 · '
-                '월 전체 ${data.transactions.length}건',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-            if (filteredTransactions.isEmpty)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 120),
-                child: Text('조건에 맞는 지출 내역이 없어요.'),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.only(bottom: 120),
-                child: Column(
-                  children: [
-                    for (
-                      var index = 0;
-                      index < filteredTransactions.length;
-                      index++
-                    ) ...[
-                      TransactionListTile(record: filteredTransactions[index]),
-                      if (index != filteredTransactions.length - 1)
-                        const Divider(height: 1, indent: 72),
-                    ],
-                  ],
-                ),
-              ),
           ],
         );
       },
-    );
-  }
-}
-
-String _paymentName(TransactionRecord record) {
-  return record.paymentMethodName ?? record.accountName;
-}
-
-int _compareTransactions(
-  TransactionRecord a,
-  TransactionRecord b,
-  _ReportSort sort,
-) {
-  return switch (sort) {
-    _ReportSort.amountDesc =>
-      b.amount.compareTo(a.amount) != 0
-          ? b.amount.compareTo(a.amount)
-          : b.occurredAt.compareTo(a.occurredAt),
-    _ReportSort.dateDesc =>
-      b.occurredAt.compareTo(a.occurredAt) != 0
-          ? b.occurredAt.compareTo(a.occurredAt)
-          : b.id.compareTo(a.id),
-    _ReportSort.dateAsc =>
-      a.occurredAt.compareTo(b.occurredAt) != 0
-          ? a.occurredAt.compareTo(b.occurredAt)
-          : a.id.compareTo(b.id),
-  };
-}
-
-class _ReportListControls extends StatelessWidget {
-  const _ReportListControls({
-    required this.query,
-    required this.categoryNames,
-    required this.paymentNames,
-    required this.categoryFilter,
-    required this.paymentFilter,
-    required this.sort,
-    required this.onQueryChanged,
-    required this.onCategoryChanged,
-    required this.onPaymentChanged,
-    required this.onSortChanged,
-    super.key,
-  });
-
-  final String query;
-  final List<String> categoryNames;
-  final List<String> paymentNames;
-  final String? categoryFilter;
-  final String? paymentFilter;
-  final _ReportSort sort;
-  final ValueChanged<String> onQueryChanged;
-  final ValueChanged<String?> onCategoryChanged;
-  final ValueChanged<String?> onPaymentChanged;
-  final ValueChanged<_ReportSort> onSortChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        TextFormField(
-          initialValue: query,
-          onChanged: onQueryChanged,
-          textInputAction: TextInputAction.search,
-          decoration: const InputDecoration(
-            labelText: '지출 검색',
-            hintText: '메모, 카테고리, 결제수단',
-            prefixIcon: Icon(Icons.search),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: DropdownButtonFormField<String?>(
-                initialValue: categoryFilter,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: '카테고리'),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('전체')),
-                  for (final name in categoryNames)
-                    DropdownMenuItem(value: name, child: Text(name)),
-                ],
-                onChanged: onCategoryChanged,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<String?>(
-                initialValue: paymentFilter,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: '결제수단'),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('전체')),
-                  for (final name in paymentNames)
-                    DropdownMenuItem(value: name, child: Text(name)),
-                ],
-                onChanged: onPaymentChanged,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<_ReportSort>(
-          initialValue: sort,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: '정렬'),
-          items: const [
-            DropdownMenuItem(
-              value: _ReportSort.amountDesc,
-              child: Text('금액 높은 순'),
-            ),
-            DropdownMenuItem(value: _ReportSort.dateDesc, child: Text('최신 순')),
-            DropdownMenuItem(value: _ReportSort.dateAsc, child: Text('과거 순')),
-          ],
-          onChanged: (value) {
-            if (value != null) onSortChanged(value);
-          },
-        ),
-      ],
     );
   }
 }
@@ -514,26 +271,23 @@ class _AnnualReport extends ConsumerWidget {
           const _ReportSectionTitle(title: '월별 지출 추이'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-            child: Column(
-              children: [
-                _BarChart(
-                  values: data.monthlyTotals,
-                  labels: List.generate(12, (index) => '${index + 1}월'),
-                  color: AppColors.info,
-                  semanticsLabel: '$year년 월별 지출 추이',
-                  showEveryLabel: true,
-                ),
-                _ChartDataTable(
-                  values: data.monthlyTotals,
-                  labels: List.generate(12, (index) => '${index + 1}월'),
-                ),
-              ],
+            child: _TableChartView(
+              values: data.monthlyTotals,
+              labels: List.generate(12, (index) => '${index + 1}월'),
+              color: AppColors.info,
+              semanticsLabel: '$year년 월별 지출 추이',
+              showEveryLabel: true,
             ),
           ),
           const _ReportSectionTitle(title: '카테고리별 연간 지출'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-            child: _NamedAmountList(items: data.categoryTotals),
+            child: _TableChartView(
+              values: [for (final item in data.categoryTotals) item.amount],
+              labels: [for (final item in data.categoryTotals) item.name],
+              color: AppColors.primary,
+              semanticsLabel: '$year년 카테고리별 지출',
+            ),
           ),
           const _ReportSectionTitle(title: '카테고리별 월 추이'),
           if (data.categoryTrends.isEmpty)
@@ -558,17 +312,13 @@ class _AnnualReport extends ConsumerWidget {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 8),
-                    _BarChart(
+                    _TableChartView(
                       values: data.categoryTrends[index].monthlyAmounts,
                       labels: List.generate(12, (month) => '${month + 1}월'),
                       color: colorFromHex(data.categoryTrends[index].colorHex),
                       semanticsLabel:
                           '$year년 ${data.categoryTrends[index].name} 월별 지출',
                       showEveryLabel: true,
-                    ),
-                    _ChartDataTable(
-                      values: data.categoryTrends[index].monthlyAmounts,
-                      labels: List.generate(12, (month) => '${month + 1}월'),
                     ),
                   ],
                 ),
@@ -789,49 +539,69 @@ class _ReportSectionTitle extends StatelessWidget {
   }
 }
 
-class _NamedAmountList extends StatelessWidget {
-  const _NamedAmountList({required this.items});
+class _TableChartView extends StatefulWidget {
+  const _TableChartView({
+    required this.values,
+    required this.labels,
+    required this.color,
+    required this.semanticsLabel,
+    this.showEveryLabel = false,
+  });
 
-  final List<NamedAmount> items;
+  final List<int> values;
+  final List<String> labels;
+  final Color color;
+  final String semanticsLabel;
+  final bool showEveryLabel;
+
+  @override
+  State<_TableChartView> createState() => _TableChartViewState();
+}
+
+class _TableChartViewState extends State<_TableChartView> {
+  bool _showChart = false;
+
+  @override
+  void didUpdateWidget(covariant _TableChartView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.values != widget.values ||
+        oldWidget.labels != widget.labels) {
+      _showChart = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) {
+    if (widget.values.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
         child: Text('표시할 지출이 없어요.'),
       );
     }
-    final maxAmount = items.fold<int>(
-      1,
-      (current, item) => math.max(current, item.amount),
-    );
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final item in items)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: Text(item.name)),
-                    Text(formatWon(item.amount)),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                LinearProgressIndicator(
-                  value: (item.amount / maxAmount).clamp(0, 1),
-                  color: item.colorHex == null
-                      ? AppColors.info
-                      : colorFromHex(item.colorHex!),
-                  backgroundColor: AppColors.surfaceVariant,
-                  minHeight: 7,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ],
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () => setState(() => _showChart = !_showChart),
+            icon: Icon(
+              _showChart ? Icons.table_rows_outlined : Icons.bar_chart,
             ),
+            label: Text(_showChart ? '표로 보기' : '차트 보기'),
           ),
+        ),
+        const SizedBox(height: 4),
+        if (_showChart)
+          _BarChart(
+            values: widget.values,
+            labels: widget.labels,
+            color: widget.color,
+            semanticsLabel: widget.semanticsLabel,
+            showEveryLabel: widget.showEveryLabel,
+          )
+        else
+          _ChartDataTable(values: widget.values, labels: widget.labels),
       ],
     );
   }
@@ -939,15 +709,11 @@ class _ChartDataTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: const EdgeInsets.only(bottom: 8),
-      leading: const Icon(Icons.table_rows_outlined),
-      title: const Text('표로 보기'),
+    return Column(
       children: [
         for (var index = 0; index < values.length; index++)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
                 Expanded(child: Text(labels[index])),
