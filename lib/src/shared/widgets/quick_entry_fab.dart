@@ -7,10 +7,24 @@ class QuickEntryFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FloatingActionButton.extended(
-      onPressed: onPressed,
-      icon: const Icon(Icons.add),
-      label: const Text('기록'),
+    return SizedBox(
+      width: 72,
+      height: 72,
+      child: FloatingActionButton(
+        onPressed: onPressed,
+        tooltip: '새 기록',
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add_rounded, size: 28),
+            SizedBox(height: 1),
+            Text(
+              '기록',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

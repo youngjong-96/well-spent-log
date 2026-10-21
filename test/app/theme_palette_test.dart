@@ -66,18 +66,21 @@ void main() {
     expect(usedColors.difference(palette), isEmpty);
   });
 
-  test('graphite text keeps WCAG AA contrast on every colored surface', () {
+  test('text colors keep WCAG AA contrast on their intended surfaces', () {
     for (final background in const [
       AppColors.surface,
       AppColors.paleBlue,
       AppColors.softBlue,
-      AppColors.skyBlue,
     ]) {
       final light = background.computeLuminance();
       final dark = AppColors.graphite.computeLuminance();
       final contrast = (light + 0.05) / (dark + 0.05);
       expect(contrast, greaterThanOrEqualTo(4.5));
     }
+    final primaryContrast =
+        (AppColors.surface.computeLuminance() + 0.05) /
+        (AppColors.skyBlue.computeLuminance() + 0.05);
+    expect(primaryContrast, greaterThanOrEqualTo(4.5));
   });
 
   test(

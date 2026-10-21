@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
+import 'theme/app_colors.dart';
 import '../domain/models/transaction_type.dart';
 import '../features/home/home_screen.dart';
 import '../features/manage/manage_screen.dart';
@@ -68,41 +69,57 @@ class _AppShellState extends ConsumerState<AppShell> {
       const ManageScreen(),
     ];
     return Scaffold(
+      extendBody: true,
       body: SafeArea(
         child: IndexedStack(index: _selectedIndex, children: screens),
       ),
       floatingActionButton: QuickEntryFab(
         onPressed: () => _showTransactionTypeSheet(context),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() => _selectedIndex = index);
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: '홈',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
-            label: '내역',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: '보고서',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '관리',
-          ),
-        ],
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: BottomAppBar(
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 8,
+        padding: EdgeInsets.zero,
+        child: Row(
+          children: [
+            _BottomNavItem(
+              label: '홈',
+              icon: Icons.home_outlined,
+              selectedIcon: Icons.home_rounded,
+              selected: _selectedIndex == 0,
+              onTap: () => _selectTab(0),
+            ),
+            _BottomNavItem(
+              label: '내역',
+              icon: Icons.receipt_long_outlined,
+              selectedIcon: Icons.receipt_long_rounded,
+              selected: _selectedIndex == 1,
+              onTap: () => _selectTab(1),
+            ),
+            const SizedBox(width: 78),
+            _BottomNavItem(
+              label: '보고서',
+              icon: Icons.bar_chart_outlined,
+              selectedIcon: Icons.bar_chart_rounded,
+              selected: _selectedIndex == 2,
+              onTap: () => _selectTab(2),
+            ),
+            _BottomNavItem(
+              label: '관리',
+              icon: Icons.settings_outlined,
+              selectedIcon: Icons.settings_rounded,
+              selected: _selectedIndex == 3,
+              onTap: () => _selectTab(3),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  void _selectTab(int index) {
+    setState(() => _selectedIndex = index);
   }
 
   void _openCategoryDetails(int categoryId) {
@@ -163,5 +180,55 @@ class _AppShellState extends ConsumerState<AppShell> {
           ),
         );
     }
+  }
+}
+
+class _BottomNavItem extends StatelessWidget {
+  const _BottomNavItem({
+    required this.label,
+    required this.icon,
+    required this.selectedIcon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected
+        ? AppColors.primary
+        : AppColors.textSecondary.withValues(alpha: 0.62);
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: '$label 탭',
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 6),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(selected ? selectedIcon : icon, color: color, size: 25),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: color,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

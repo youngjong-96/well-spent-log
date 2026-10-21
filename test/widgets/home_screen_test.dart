@@ -21,7 +21,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     int? openedCategory;
-    final month = DateTime(2026, 8);
+    final now = DateTime.now();
+    final month = DateTime(now.year, now.month);
     final summary = HomeSummary(
       totalBalance: const Money(999999),
       monthlyExpense: const Money(35000),
@@ -37,13 +38,13 @@ void main() {
       ],
       period: BudgetPeriodRange(
         startDate: month,
-        endDate: DateTime(2026, 8, 31),
+        endDate: DateTime(month.year, month.month + 1, 0),
       ),
       monthlyTransactions: [
         TransactionRecord(
           id: 1,
           type: RecordType.expense,
-          occurredAt: DateTime(2026, 8, 2),
+          occurredAt: DateTime(month.year, month.month, 2),
           amount: 30000,
           memo: '장보기',
           accountId: 1,
@@ -54,7 +55,7 @@ void main() {
         TransactionRecord(
           id: 2,
           type: RecordType.expense,
-          occurredAt: DateTime(2026, 8, 1),
+          occurredAt: DateTime(month.year, month.month, 1),
           amount: 5000,
           memo: '버스',
           accountId: 1,
@@ -80,8 +81,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('이번 달 지출 합계'), findsOneWidget);
+    expect(find.text('이번 달 남은 예산'), findsOneWidget);
+    expect(find.text('65,000원'), findsOneWidget);
+    expect(find.text('사용한 금액'), findsOneWidget);
+    expect(find.text('전체 예산'), findsOneWidget);
     expect(find.text('35,000원'), findsOneWidget);
+    expect(find.text('100,000원'), findsOneWidget);
+    expect(find.text('35% 사용'), findsOneWidget);
+    expect(find.text('이번 달 진행률'), findsOneWidget);
+    expect(find.textContaining('오늘'), findsOneWidget);
     expect(find.text('이번 달 지출 내역'), findsNothing);
     expect(find.byType(TransactionListTile), findsNothing);
     expect(find.text('30%'), findsOneWidget);

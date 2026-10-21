@@ -36,10 +36,11 @@ flutter:
   uses-material-design: true
   assets:
     - assets/fonts/OFL.txt
+    - assets/fonts/NotoSansKR-LICENSE.txt
   fonts:
-    - family: GowunDodum
+    - family: NotoSansKR
       fonts:
-        - asset: assets/fonts/GowunDodum-Regular.ttf
+        - asset: assets/fonts/NotoSansKR-Variable.ttf
     # Keep the icon font explicit. Some Windows/Android builds omit Flutter's
     # implicit Material font when the project is reached through a SUBST drive.
     - family: MaterialIcons

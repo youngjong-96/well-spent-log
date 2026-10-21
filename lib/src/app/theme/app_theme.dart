@@ -8,16 +8,16 @@ class AppTheme {
   static ThemeData get light {
     final base = ThemeData(
       useMaterial3: true,
-      fontFamily: 'GowunDodum',
+      fontFamily: 'NotoSansKR',
       colorScheme: const ColorScheme.light(
         primary: AppColors.primary,
-        onPrimary: AppColors.graphite,
+        onPrimary: AppColors.surface,
         primaryContainer: AppColors.primaryContainer,
         onPrimaryContainer: AppColors.graphite,
         primaryFixed: AppColors.skyBlue,
         primaryFixedDim: AppColors.softBlue,
-        onPrimaryFixed: AppColors.graphite,
-        onPrimaryFixedVariant: AppColors.graphite,
+        onPrimaryFixed: AppColors.surface,
+        onPrimaryFixedVariant: AppColors.surface,
         secondary: AppColors.navyBlue,
         onSecondary: AppColors.surface,
         secondaryContainer: AppColors.softBlue,
@@ -27,13 +27,13 @@ class AppTheme {
         onSecondaryFixed: AppColors.graphite,
         onSecondaryFixedVariant: AppColors.graphite,
         tertiary: AppColors.skyBlue,
-        onTertiary: AppColors.graphite,
+        onTertiary: AppColors.surface,
         tertiaryContainer: AppColors.softBlue,
         onTertiaryContainer: AppColors.graphite,
         tertiaryFixed: AppColors.skyBlue,
         tertiaryFixedDim: AppColors.softBlue,
-        onTertiaryFixed: AppColors.graphite,
-        onTertiaryFixedVariant: AppColors.graphite,
+        onTertiaryFixed: AppColors.surface,
+        onTertiaryFixedVariant: AppColors.surface,
         error: AppColors.navyBlue,
         onError: AppColors.surface,
         errorContainer: AppColors.softBlue,
@@ -63,26 +63,38 @@ class AppTheme {
     return base.copyWith(
       textTheme: base.textTheme.copyWith(
         headlineMedium: base.textTheme.headlineMedium?.copyWith(
-          fontSize: 22,
-          fontWeight: FontWeight.w600,
+          fontSize: 26,
+          height: 1.25,
+          fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
         ),
         titleMedium: base.textTheme.titleMedium?.copyWith(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
+          fontSize: 17,
+          height: 1.35,
+          fontWeight: FontWeight.w700,
           color: AppColors.textPrimary,
         ),
         bodyLarge: base.textTheme.bodyLarge?.copyWith(
-          fontSize: 15,
+          fontSize: 16,
+          height: 1.5,
+          fontWeight: FontWeight.w500,
           color: AppColors.textPrimary,
         ),
         bodyMedium: base.textTheme.bodyMedium?.copyWith(
-          fontSize: 14,
+          fontSize: 15,
+          height: 1.45,
+          fontWeight: FontWeight.w500,
           color: AppColors.textPrimary,
         ),
         bodySmall: base.textTheme.bodySmall?.copyWith(
-          fontSize: 12,
-          color: AppColors.textSecondary.withValues(alpha: 0.72),
+          fontSize: 13,
+          height: 1.4,
+          color: AppColors.textSecondary.withValues(alpha: 0.7),
+        ),
+        labelLarge: base.textTheme.labelLarge?.copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
         ),
       ),
       cardTheme: const CardThemeData(
@@ -90,7 +102,7 @@ class AppTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(8)),
+          borderRadius: BorderRadius.all(Radius.circular(18)),
           side: BorderSide(color: AppColors.border),
         ),
       ),
@@ -98,18 +110,29 @@ class AppTheme {
         filled: true,
         fillColor: AppColors.surface,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(8)),
+          borderRadius: BorderRadius.all(Radius.circular(14)),
           borderSide: BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(8)),
+          borderRadius: BorderRadius.all(Radius.circular(14)),
           borderSide: BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(14)),
+          borderSide: BorderSide(color: AppColors.primary, width: 1.5),
         ),
       ),
       navigationBarTheme: const NavigationBarThemeData(
         backgroundColor: AppColors.surface,
-        indicatorColor: AppColors.primaryContainer,
+        indicatorColor: AppColors.paleBlue,
         height: 72,
+      ),
+      bottomAppBarTheme: const BottomAppBarThemeData(
+        color: AppColors.surface,
+        elevation: 12,
+        shadowColor: AppColors.softBlue,
+        surfaceTintColor: AppColors.surface,
+        height: 78,
       ),
       dividerTheme: const DividerThemeData(color: AppColors.border),
       appBarTheme: const AppBarTheme(
@@ -119,14 +142,25 @@ class AppTheme {
         elevation: 0,
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.primaryContainer,
-        foregroundColor: AppColors.graphite,
+        backgroundColor: AppColors.primary,
+        foregroundColor: AppColors.surface,
+        elevation: 8,
+        focusElevation: 8,
+        hoverElevation: 8,
+        highlightElevation: 10,
+        shape: CircleBorder(),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.graphite,
+          foregroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: AppColors.navyBlue),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.primary,
@@ -135,7 +169,7 @@ class AppTheme {
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
     );

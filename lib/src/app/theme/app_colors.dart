@@ -5,13 +5,13 @@ class AppColors {
 
   // The complete app palette is limited to these six base colors.
   static const surface = Color(0xFFFFFFFF);
-  static const paleBlue = Color(0xFFF2F7FC);
-  static const softBlue = Color(0xFFD8E8F5);
-  static const skyBlue = Color(0xFF84B6E2);
-  static const navyBlue = Color(0xFF294761);
-  static const graphite = Color(0xFF263238);
+  static const paleBlue = Color(0xFFF4F8FD);
+  static const softBlue = Color(0xFFDCEBFA);
+  static const skyBlue = Color(0xFF2F6FEB);
+  static const navyBlue = Color(0xFF153B66);
+  static const graphite = Color(0xFF172033);
 
-  static const background = paleBlue;
+  static const background = surface;
   static const surfaceVariant = paleBlue;
   static const textPrimary = graphite;
   static const textSecondary = graphite;
