@@ -1,10 +1,27 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:well_spent_log/src/app/theme/app_colors.dart';
 import 'package:well_spent_log/src/app/theme/app_theme.dart';
 import 'package:well_spent_log/src/shared/formatters.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('Material icon family maps to the bundled font', () async {
+    final manifest =
+        jsonDecode(await rootBundle.loadString('FontManifest.json'))
+            as List<dynamic>;
+    final family = manifest.cast<Map<String, dynamic>>().singleWhere(
+      (entry) => entry['family'] == 'MaterialIcons',
+    );
+    final asset = family['fonts'][0]['asset'] as String;
+    expect(asset, 'fonts/MaterialIcons-Regular.otf');
+    final font = await rootBundle.load(asset);
+    expect(font.lengthInBytes, greaterThan(1000000));
+  });
+
   test('app themes use Moneygraphy with a Korean fallback', () {
     for (final theme in [AppTheme.light, AppTheme.dark]) {
       expect(theme.textTheme.bodyMedium?.fontFamily, 'Moneygraphy');

@@ -42,6 +42,7 @@ void main() {
       memo: 'lunch',
       accountId: 1,
       accountName: 'cash',
+      categoryName: '식비',
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -54,6 +55,7 @@ void main() {
         ),
       ),
     );
+    expect(find.byIcon(Icons.restaurant_outlined), findsOneWidget);
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.delete_outline));

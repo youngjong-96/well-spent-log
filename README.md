@@ -14,3 +14,16 @@
 
 
 이런 질문들을 객관적인 데이터로 확인하고 불필요한 지출을 줄여 돈을 더 잘 쓰기 위한 '잘쓸결심'
+
+## Android 빌드 리소스 복구
+
+아이콘이 한자로 표시되거나 실행 화면에서 멈춘다면 APK의 글꼴과 셰이더가 누락됐는지 확인한다. Android 빌드는 필수 리소스가 빠지면 오류로 중단하도록 검사한다.
+
+`Flutter asset bundle is incomplete` 오류가 나오면 실행 중인 Flutter 명령을 종료하고 프로젝트 루트(`pubspec.yaml`이 있는 폴더)에서 다음 명령을 실행한다. `.dart_tool/flutter_build`는 생성된 빌드 캐시이며 휴대전화의 지출 데이터와는 무관하다.
+
+```powershell
+Remove-Item -LiteralPath .dart_tool\flutter_build -Recurse -Force
+flutter run -d R3CX209KK7Y
+```
+
+한글 경로를 피하기 위해 `W:` 같은 SUBST 드라이브를 사용한다면 해당 드라이브로 이동한 상태에서 실행한다.

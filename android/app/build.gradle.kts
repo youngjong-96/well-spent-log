@@ -48,3 +48,33 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// A stale Flutter build cache can report success while omitting bundle files.
+// Check the generated bundle before copying it into the APK, on every build.
+tasks.matching { it.name.startsWith("copyFlutterAssets") }.configureEach {
+    outputs.upToDateWhen { false }
+    doFirst {
+        val variant = name.removePrefix("copyFlutterAssets")
+            .replaceFirstChar { it.lowercaseChar() }
+        val bundle = layout.buildDirectory
+            .dir("intermediates/flutter/$variant/flutter_assets").get().asFile
+        val requiredAssets = listOf(
+            "AssetManifest.bin",
+            "FontManifest.json",
+            "fonts/MaterialIcons-Regular.otf",
+            "assets/fonts/Moneygraphy%20Font/TTF/Moneygraphy-Rounded.ttf",
+            "assets/fonts/NotoSansKR-Variable.ttf",
+            "shaders/ink_sparkle.frag",
+            "shaders/stretch_effect.frag",
+        )
+        val missing = requiredAssets.filter { asset ->
+            val file = bundle.resolve(asset)
+            !file.isFile || file.length() == 0L
+        }
+        check(missing.isEmpty()) {
+            "Flutter asset bundle is incomplete: ${missing.joinToString()}. " +
+                "Close running builds, remove only .dart_tool/flutter_build " +
+                "from the project root, then rebuild. App data is unaffected."
+        }
+    }
+}

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/providers.dart';
 import '../../domain/models/budget_usage.dart';
 import '../../domain/models/transaction_record.dart';
+import '../../shared/category_icon.dart';
 import '../../shared/formatters.dart';
 import '../../shared/widgets/transaction_list_tile.dart';
 import '../transaction/transaction_form_sheet.dart';
@@ -688,7 +689,7 @@ class _BudgetCategoryCard extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      _categoryIcon(usage.categoryName),
+                      categoryIconFor(usage.categoryName),
                       color: scheme.secondary,
                       size: 22,
                     ),
@@ -757,28 +758,6 @@ class _BudgetCategoryCard extends StatelessWidget {
       ),
     );
   }
-}
-
-IconData _categoryIcon(String name) {
-  if (name.contains('식') || name.contains('카페')) {
-    return Icons.restaurant_outlined;
-  }
-  if (name.contains('교통') || name.contains('차')) {
-    return Icons.directions_bus_outlined;
-  }
-  if (name.contains('생활') || name.contains('쇼핑')) {
-    return Icons.shopping_bag_outlined;
-  }
-  if (name.contains('주거') || name.contains('집')) {
-    return Icons.home_outlined;
-  }
-  if (name.contains('건강') || name.contains('의료')) {
-    return Icons.medical_services_outlined;
-  }
-  if (name.contains('문화') || name.contains('여가')) {
-    return Icons.movie_outlined;
-  }
-  return Icons.account_balance_wallet_outlined;
 }
 
 class _SectionTitle extends StatelessWidget {

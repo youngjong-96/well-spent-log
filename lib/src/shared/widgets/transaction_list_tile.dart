@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/models/transaction_record.dart';
+import '../category_icon.dart';
 import '../formatters.dart';
 
 class TransactionListTile extends StatelessWidget {
@@ -38,7 +39,7 @@ class TransactionListTile extends StatelessWidget {
         ),
         child: Icon(
           switch (record.type) {
-            RecordType.expense => Icons.shopping_bag_outlined,
+            RecordType.expense => categoryIconFor(record.categoryName),
             RecordType.income => Icons.add_card_outlined,
             RecordType.refund => Icons.replay_outlined,
           },
