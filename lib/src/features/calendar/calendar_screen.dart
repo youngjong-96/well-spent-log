@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/theme/app_colors.dart';
 import '../../application/providers.dart';
 import '../transaction/transaction_form_sheet.dart';
 import '../../domain/models/transaction_record.dart';
@@ -291,10 +290,10 @@ class _MonthCalendar extends StatelessWidget {
                       weekdays[index],
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: index == 0
-                            ? AppColors.overBudget
+                            ? Theme.of(context).colorScheme.secondary
                             : index == 6
-                            ? AppColors.info
-                            : AppColors.textSecondary,
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -351,10 +350,14 @@ class _MonthCalendar extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: selected
-                        ? AppColors.primaryContainer
+                        ? Theme.of(context).colorScheme.primaryContainer
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
-                    border: today ? Border.all(color: AppColors.primary) : null,
+                    border: today
+                        ? Border.all(
+                            color: Theme.of(context).colorScheme.primary,
+                          )
+                        : null,
                   ),
                   child: Column(
                     children: [

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../app/theme/app_colors.dart';
 import '../../domain/models/transaction_record.dart';
 import '../formatters.dart';
 
@@ -18,10 +17,12 @@ class TransactionListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isExpense = record.type == RecordType.expense;
-    final amountColor = isExpense ? AppColors.textPrimary : AppColors.income;
+    final scheme = Theme.of(context).colorScheme;
+    final amountColor = scheme.onSurface;
     final categoryColor = record.categoryColorHex == null
-        ? AppColors.info
+        ? scheme.secondary
+        : Theme.of(context).brightness == Brightness.dark
+        ? scheme.primary
         : colorFromHex(record.categoryColorHex!);
     return ListTile(
       minTileHeight: 64,

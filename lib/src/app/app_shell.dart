@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
-import 'theme/app_colors.dart';
 import '../domain/models/transaction_type.dart';
 import '../features/home/home_screen.dart';
 import '../features/manage/manage_screen.dart';
@@ -200,9 +199,10 @@ class _BottomNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final color = selected
-        ? AppColors.primary
-        : AppColors.textSecondary.withValues(alpha: 0.62);
+        ? scheme.primary
+        : scheme.onSurfaceVariant.withValues(alpha: 0.68);
     return Expanded(
       child: Semantics(
         button: true,

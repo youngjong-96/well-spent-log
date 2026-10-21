@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../application/providers.dart';
 
 class ManageScreen extends StatelessWidget {
   const ManageScreen({super.key});
@@ -19,6 +22,9 @@ class ManageScreen extends StatelessWidget {
         ),
         SliverList.list(
           children: [
+            const _SectionLabel('화면'),
+            const _ThemeModeTile(),
+            const Divider(height: 32),
             const _SectionLabel('예산과 기록'),
             _ManageTile(
               icon: Icons.category_outlined,
@@ -59,6 +65,89 @@ class ManageScreen extends StatelessWidget {
     );
   }
 }
+
+class _ThemeModeTile extends ConsumerWidget {
+  const _ThemeModeTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider);
+    return ListTile(
+      minTileHeight: 68,
+      leading: Icon(
+        mode == ThemeMode.dark
+            ? Icons.dark_mode_outlined
+            : mode == ThemeMode.light
+            ? Icons.light_mode_outlined
+            : Icons.brightness_auto_outlined,
+      ),
+      title: const Text('화면 모드'),
+      subtitle: Text(_themeModeLabel(mode)),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _showThemeModeSheet(context, ref, mode),
+    );
+  }
+
+  Future<void> _showThemeModeSheet(
+    BuildContext context,
+    WidgetRef ref,
+    ThemeMode selectedMode,
+  ) async {
+    final selected = await showModalBottomSheet<ThemeMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                child: Text(
+                  '화면 모드',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              for (final mode in ThemeMode.values)
+                ListTile(
+                  leading: Icon(_themeModeIcon(mode)),
+                  title: Text(_themeModeLabel(mode)),
+                  subtitle: mode == ThemeMode.system
+                      ? const Text('휴대전화의 밝기 설정을 따라요')
+                      : null,
+                  trailing: selectedMode == mode
+                      ? const Icon(Icons.check_rounded)
+                      : null,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  onTap: () => Navigator.pop(context, mode),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await ref.read(themeModeProvider.notifier).setMode(selected);
+    }
+  }
+}
+
+String _themeModeLabel(ThemeMode mode) => switch (mode) {
+  ThemeMode.system => '시스템 설정',
+  ThemeMode.light => '라이트 모드',
+  ThemeMode.dark => '다크 모드',
+};
+
+IconData _themeModeIcon(ThemeMode mode) => switch (mode) {
+  ThemeMode.system => Icons.brightness_auto_outlined,
+  ThemeMode.light => Icons.light_mode_outlined,
+  ThemeMode.dark => Icons.dark_mode_outlined,
+};
 
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.label);

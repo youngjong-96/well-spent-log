@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/local/app_database.dart';
@@ -23,6 +24,35 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
 final settingsStoreProvider = Provider<SettingsStore>((ref) {
   return SettingsStore();
 });
+
+final themeModeProvider = NotifierProvider<ThemeModeController, ThemeMode>(
+  ThemeModeController.new,
+);
+
+class ThemeModeController extends Notifier<ThemeMode> {
+  @override
+  ThemeMode build() {
+    _loadSavedMode();
+    return ThemeMode.system;
+  }
+
+  Future<void> _loadSavedMode() async {
+    final saved = await ref.read(settingsStoreProvider).getThemeMode();
+    state = _themeModeFromName(saved);
+  }
+
+  Future<void> setMode(ThemeMode mode) async {
+    state = mode;
+    await ref.read(settingsStoreProvider).setThemeMode(mode.name);
+  }
+}
+
+ThemeMode _themeModeFromName(String value) {
+  return ThemeMode.values.firstWhere(
+    (mode) => mode.name == value,
+    orElse: () => ThemeMode.system,
+  );
+}
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();

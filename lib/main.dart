@@ -9,8 +9,10 @@ import 'src/app/well_spent_app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   LicenseRegistry.addLicense(() async* {
-    final license = await rootBundle.loadString('assets/fonts/OFL.txt');
-    yield LicenseEntryWithLineBreaks(['Gowun Dodum'], license);
+    final license = await rootBundle.loadString(
+      'assets/fonts/NotoSansKR-LICENSE.txt',
+    );
+    yield LicenseEntryWithLineBreaks(['Noto Sans KR'], license);
   });
   await initializeDateFormatting('ko_KR');
 

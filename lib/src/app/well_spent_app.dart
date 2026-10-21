@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'app_shell.dart';
@@ -10,6 +11,7 @@ import '../features/manage/category_budget_screen.dart';
 import '../features/manage/security_screen.dart';
 import '../features/manage/templates_screen.dart';
 import 'theme/app_theme.dart';
+import '../application/providers.dart';
 
 final _router = GoRouter(
   routes: [
@@ -37,15 +39,17 @@ final _router = GoRouter(
   ],
 );
 
-class WellSpentApp extends StatelessWidget {
+class WellSpentApp extends ConsumerWidget {
   const WellSpentApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
       title: '잘쓸결심',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ref.watch(themeModeProvider),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,

@@ -27,3 +27,15 @@ class AppColors {
 
   static const categoryPalette = [softBlue, skyBlue, navyBlue];
 }
+
+class AppDarkColors {
+  const AppDarkColors._();
+
+  // Dark mode also uses only six base colors to keep the visual system calm.
+  static const canvas = Color(0xFF0D1624);
+  static const surface = Color(0xFF142033);
+  static const raisedSurface = Color(0xFF1C2A40);
+  static const mutedBlue = Color(0xFF2A405F);
+  static const softBlue = Color(0xFF83AEE8);
+  static const text = Color(0xFFEEF3FA);
+}

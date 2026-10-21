@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../app/theme/app_colors.dart';
 import '../../domain/models/budget_usage.dart';
 import '../formatters.dart';
 
@@ -21,12 +20,16 @@ class BudgetProgressTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
     final progress = usage.usedRatio.clamp(0.0, 1.0);
     final progressColor = switch (usage.usedPercent) {
-      >= 100 => AppColors.overBudget,
-      >= 80 => AppColors.warning80,
-      >= 50 => AppColors.warning50,
-      _ => colorFromHex(usage.colorHex),
+      >= 100 => scheme.secondary,
+      >= 80 => scheme.secondary,
+      >= 50 => scheme.primary,
+      _ =>
+        Theme.of(context).brightness == Brightness.dark
+            ? scheme.primary
+            : colorFromHex(usage.colorHex),
     };
     final valueText = showAmount
         ? '${usage.spentAmount.format()} / ${usage.budgetAmount.format()}'
@@ -70,7 +73,7 @@ class BudgetProgressTile extends StatelessWidget {
                   Text(
                     valueText,
                     style: textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textPrimary,
+                      color: scheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/theme/app_colors.dart';
 import '../../application/providers.dart';
 import '../../domain/models/report_summary.dart';
 import '../../domain/models/transaction_record.dart';
@@ -213,7 +212,7 @@ class _MonthlyReport extends ConsumerWidget {
               child: _TableChartView(
                 values: dailyValues,
                 labels: dailyLabels,
-                color: AppColors.primary,
+                color: Theme.of(context).colorScheme.primary,
                 semanticsLabel: '일별 지출 추이',
               ),
             ),
@@ -223,7 +222,7 @@ class _MonthlyReport extends ConsumerWidget {
               child: _TableChartView(
                 values: categoryAmounts,
                 labels: categoryLabels,
-                color: AppColors.info,
+                color: Theme.of(context).colorScheme.secondary,
                 semanticsLabel: '카테고리별 지출',
               ),
             ),
@@ -233,7 +232,7 @@ class _MonthlyReport extends ConsumerWidget {
               child: _TableChartView(
                 values: paymentValues,
                 labels: paymentLabels,
-                color: AppColors.primary,
+                color: Theme.of(context).colorScheme.primary,
                 semanticsLabel: '결제수단별 지출',
               ),
             ),
@@ -274,7 +273,7 @@ class _AnnualReport extends ConsumerWidget {
             child: _TableChartView(
               values: data.monthlyTotals,
               labels: List.generate(12, (index) => '${index + 1}월'),
-              color: AppColors.info,
+              color: Theme.of(context).colorScheme.secondary,
               semanticsLabel: '$year년 월별 지출 추이',
               showEveryLabel: true,
             ),
@@ -285,7 +284,7 @@ class _AnnualReport extends ConsumerWidget {
             child: _TableChartView(
               values: [for (final item in data.categoryTotals) item.amount],
               labels: [for (final item in data.categoryTotals) item.name],
-              color: AppColors.primary,
+              color: Theme.of(context).colorScheme.primary,
               semanticsLabel: '$year년 카테고리별 지출',
             ),
           ),
@@ -339,7 +338,7 @@ class _SummaryBand extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Wrap(
@@ -350,7 +349,7 @@ class _SummaryBand extends StatelessWidget {
             child: _Metric(
               label: '총지출',
               value: formatWon(data.totalExpense),
-              color: AppColors.textPrimary,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           SizedBox(
@@ -358,7 +357,7 @@ class _SummaryBand extends StatelessWidget {
             child: _Metric(
               label: '총수입',
               value: formatWon(data.totalIncome, signed: true),
-              color: AppColors.textPrimary,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           SizedBox(
@@ -366,7 +365,7 @@ class _SummaryBand extends StatelessWidget {
             child: _Metric(
               label: '남은 예산',
               value: formatWon(data.remainingBudget),
-              color: AppColors.textPrimary,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ],
@@ -454,13 +453,13 @@ class _InsightCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
+        color: Theme.of(context).colorScheme.surface,
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          Icon(icon, color: AppColors.navyBlue),
+          Icon(icon, color: Theme.of(context).colorScheme.secondary),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -660,7 +659,9 @@ class _BarChart extends StatelessWidget {
                                 child: DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: values[index] == 0
-                                        ? AppColors.border
+                                        ? Theme.of(
+                                            context,
+                                          ).colorScheme.outlineVariant
                                         : color,
                                     borderRadius: const BorderRadius.vertical(
                                       top: Radius.circular(3),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/theme/app_colors.dart';
 import '../../application/providers.dart';
 import '../../domain/models/budget_usage.dart';
 import '../../domain/models/transaction_record.dart';
@@ -360,26 +359,27 @@ class _MonthChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
       decoration: BoxDecoration(
-        color: AppColors.paleBlue,
+        color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
+          Icon(
             Icons.calendar_today_outlined,
             size: 16,
-            color: AppColors.navyBlue,
+            color: scheme.secondary,
           ),
           const SizedBox(width: 6),
           Text(
             '${month.month}월',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: AppColors.navyBlue,
+              color: scheme.secondary,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -397,6 +397,7 @@ class _BudgetSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final remaining = totalBudget - spentAmount;
     final ratio = totalBudget == 0 ? 0.0 : spentAmount / totalBudget;
     final usedPercent = totalBudget == 0 ? 0 : (ratio * 100).floor();
@@ -413,7 +414,7 @@ class _BudgetSummary extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(
-          color: AppColors.primaryContainer,
+          color: scheme.primaryContainer,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
@@ -430,8 +431,8 @@ class _BudgetSummary extends StatelessWidget {
                   fontSize: 34,
                   fontWeight: FontWeight.w800,
                   color: remaining < 0
-                      ? AppColors.overBudget
-                      : AppColors.textPrimary,
+                      ? scheme.secondary
+                      : scheme.onPrimaryContainer,
                 ),
               ),
             ),
@@ -441,10 +442,8 @@ class _BudgetSummary extends StatelessWidget {
                 Expanded(
                   child: LinearProgressIndicator(
                     value: ratio.clamp(0, 1),
-                    color: ratio >= 1
-                        ? AppColors.overBudget
-                        : AppColors.primary,
-                    backgroundColor: AppColors.surface.withValues(alpha: 0.7),
+                    color: ratio >= 1 ? scheme.secondary : scheme.primary,
+                    backgroundColor: scheme.surface.withValues(alpha: 0.7),
                     minHeight: 9,
                     borderRadius: BorderRadius.circular(5),
                   ),
@@ -459,7 +458,7 @@ class _BudgetSummary extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
-            const Divider(height: 1, color: AppColors.skyBlue),
+            Divider(height: 1, color: scheme.outline),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -469,7 +468,7 @@ class _BudgetSummary extends StatelessWidget {
                     value: formatWon(spentAmount),
                   ),
                 ),
-                Container(width: 1, height: 44, color: AppColors.skyBlue),
+                Container(width: 1, height: 44, color: scheme.outline),
                 const SizedBox(width: 20),
                 Expanded(
                   child: _BudgetMetric(
@@ -521,6 +520,7 @@ class _MonthProgressCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
     final selectedMonth = DateTime(month.year, month.month);
     final currentMonth = DateTime(now.year, now.month);
@@ -538,9 +538,9 @@ class _MonthProgressCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -563,7 +563,7 @@ class _MonthProgressCard extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 5),
                         decoration: BoxDecoration(
-                          color: AppColors.primary,
+                          color: scheme.primary,
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Text(
@@ -571,7 +571,7 @@ class _MonthProgressCard extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
-                                color: AppColors.surface,
+                                color: scheme.onPrimary,
                                 fontWeight: FontWeight.w700,
                               ),
                         ),
@@ -583,8 +583,8 @@ class _MonthProgressCard extends StatelessWidget {
                       top: 38,
                       child: LinearProgressIndicator(
                         value: progress,
-                        color: AppColors.navyBlue,
-                        backgroundColor: AppColors.softBlue,
+                        color: scheme.secondary,
+                        backgroundColor: scheme.surfaceContainerHighest,
                         minHeight: 6,
                         borderRadius: BorderRadius.circular(3),
                       ),
@@ -615,7 +615,7 @@ class _MonthProgressCard extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.paleBlue,
+              color: scheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
@@ -647,12 +647,16 @@ class _BudgetCategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final ratio = usage.usedRatio.clamp(0.0, 1.0);
     final progressColor = switch (usage.usedPercent) {
-      >= 100 => AppColors.overBudget,
-      >= 80 => AppColors.warning80,
-      >= 50 => AppColors.warning50,
-      _ => colorFromHex(usage.colorHex),
+      >= 100 => scheme.secondary,
+      >= 80 => scheme.secondary,
+      >= 50 => scheme.primary,
+      _ =>
+        Theme.of(context).brightness == Brightness.dark
+            ? scheme.primary
+            : colorFromHex(usage.colorHex),
     };
     final valueText = showAmount
         ? '${usage.spentAmount.format()} / ${usage.budgetAmount.format()}'
@@ -664,7 +668,7 @@ class _BudgetCategoryCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppColors.border),
+        side: BorderSide(color: scheme.outlineVariant),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -679,13 +683,13 @@ class _BudgetCategoryCard extends StatelessWidget {
                   Container(
                     width: 40,
                     height: 40,
-                    decoration: const BoxDecoration(
-                      color: AppColors.paleBlue,
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       _categoryIcon(usage.categoryName),
-                      color: AppColors.navyBlue,
+                      color: scheme.secondary,
                       size: 22,
                     ),
                   ),
@@ -723,7 +727,7 @@ class _BudgetCategoryCard extends StatelessWidget {
               LinearProgressIndicator(
                 value: ratio,
                 color: progressColor,
-                backgroundColor: AppColors.softBlue,
+                backgroundColor: scheme.surfaceContainerHighest,
                 minHeight: 8,
                 borderRadius: BorderRadius.circular(4),
               ),

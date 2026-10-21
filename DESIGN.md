@@ -35,6 +35,19 @@ Material 3를 기준으로 흰색과 파스텔 블루를 중심으로 사용하�
 - Navy Blue / Strong State, Icon: `#153B66`
 - Graphite / Text: `#172033`
 
+### 다크 모드
+
+앱은 `시스템 설정`, `라이트 모드`, `다크 모드`를 제공하고 사용자의 선택을 기기에 저장한다. 기본값은 시스템 설정이며 휴대전화의 밝기 모드를 자동으로 따른다. 다크 모드는 순수 검정과 선명한 원색을 피하고 짙은 네이비 바탕과 채도가 낮은 블루를 사용한다. 다크 모드 역시 아래 6가지 기본색만 사용한다.
+
+- Midnight / Canvas: `#0D1624`
+- Deep Navy / Surface: `#142033`
+- Slate Navy / Raised Surface: `#1C2A40`
+- Muted Blue / Container, Border: `#2A405F`
+- Soft Blue / Primary, Accent: `#83AEE8`
+- Ice / Text: `#EEF3FA`
+
+카드, 입력창, 하단 메뉴, 시트는 각 모드의 `Surface`를 사용한다. 본문과 금액은 각 모드의 기본 텍스트색을 사용해 WCAG AA 수준의 대비를 유지한다. 다크 모드의 주요 버튼은 `Soft Blue` 배경과 `Midnight` 글자를 조합해 눈부심을 줄이고 식별성을 확보한다. 화면별 위젯은 고정된 라이트 색을 직접 사용하지 않고 `ThemeData.colorScheme`의 의미 기반 색을 사용한다.
+
 본문, 금액, 입력값처럼 읽어야 하는 정보에는 `Graphite`를 기본으로 사용한다. `Pale Blue`와 `Soft Blue`는 보조 배경과 테두리에만 사용하며 텍스트 색상으로 사용하지 않는다. `Clear Blue` 위의 버튼 라벨과 아이콘은 흰색을 사용한다.
 
 카테고리는 `Soft Blue`, `Clear Blue`, `Navy Blue`를 순환해서 사용한다. 기존 데이터에 다른 색상이 저장되어 있어도 화면에서는 이 세 색 중 하나로 정규화한다. 카테고리명과 아이콘을 항상 함께 표시하여 색상만으로 의미를 구분하지 않는다.
@@ -42,7 +55,7 @@ Material 3를 기준으로 흰색과 파스텔 블루를 중심으로 사용하�
 수입, 경고, 예산 초과에도 별도의 초록·노랑·주황·빨강을 추가하지 않는다. 수입은 `+` 부호와 라벨로, 경고 단계는 퍼센트와 굵기 및 `Clear Blue`에서 `Navy Blue`로 깊어지는 명도로 전달한다.
 
 ## 타이포그래피
-- 기본 폰트는 현대적인 고딕 계열의 `Noto Sans KR Variable`을 앱 자산으로 포함해 Android와 iOS에 동일하게 적용한다. Regular부터 ExtraBold까지 정보 위계에 맞는 굵기를 사용한다. 아이콘은 별도의 `MaterialIcons` 글꼴을 사용해 본문 글꼴의 영향을 받지 않게 한다.
+- 기본 폰트는 부드러운 인상의 `Moneygraphy Rounded`를 앱 자산으로 포함해 Android와 iOS에 동일하게 적용한다. 제목, 금액, 본문 모두 같은 글꼴을 사용하며 필요한 굵기는 Flutter의 글꼴 렌더링으로 표현한다. Moneygraphy에 없는 특수문자는 `Noto Sans KR`로 보완하고, 아이콘은 별도의 `MaterialIcons` 글꼴을 사용해 본문 글꼴의 영향을 받지 않게 한다.
 - 아래 글자 크기는 Flutter `TextStyle.fontSize`의 논리 픽셀 기준이며 시스템 텍스트 배율에 따라 확대된다.
 - 숫자는 금액 식별이 중요하므로 굵기와 자릿수 구분을 명확히 한다.
 - 화면 제목: 26, ExtraBold

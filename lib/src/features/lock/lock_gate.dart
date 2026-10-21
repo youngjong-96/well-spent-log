@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/theme/app_colors.dart';
 import '../../application/providers.dart';
 
 class LockGate extends ConsumerStatefulWidget {
@@ -56,10 +55,10 @@ class _LockGateState extends ConsumerState<LockGate> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.lock_outline,
                         size: 42,
-                        color: AppColors.primary,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                       const SizedBox(height: 20),
                       Text(

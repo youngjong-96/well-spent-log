@@ -38,14 +38,12 @@ flutter:
     - assets/fonts/OFL.txt
     - assets/fonts/NotoSansKR-LICENSE.txt
   fonts:
+    - family: Moneygraphy
+      fonts:
+        - asset: "assets/fonts/Moneygraphy Font/TTF/Moneygraphy-Rounded.ttf"
     - family: NotoSansKR
       fonts:
         - asset: assets/fonts/NotoSansKR-Variable.ttf
-    # Keep the icon font explicit. Some Windows/Android builds omit Flutter's
-    # implicit Material font when the project is reached through a SUBST drive.
-    - family: MaterialIcons
-      fonts:
-        - asset: assets/fonts/MaterialIcons-Regular.otf
   shaders:
     - shaders/ink_sparkle.frag
     - shaders/stretch_effect.frag

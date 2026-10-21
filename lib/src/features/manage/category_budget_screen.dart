@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/theme/app_colors.dart';
 import '../../application/providers.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/home_summary.dart';
@@ -185,9 +184,11 @@ class CategoryBudgetScreen extends ConsumerWidget {
                                 : null,
                           ),
                           child: colorHex == swatch
-                              ? const Icon(
+                              ? Icon(
                                   Icons.check,
-                                  color: AppColors.navyBlue,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                 )
                               : null,
                         ),
