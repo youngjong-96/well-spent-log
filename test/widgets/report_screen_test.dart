@@ -27,8 +27,6 @@ void main() {
       occurredAt: DateTime(now.year, now.month, 1),
       amount: 10000,
       memo: '장보기',
-      accountId: 1,
-      accountName: '현금',
       categoryId: 1,
       categoryName: '식비',
       paymentMethodId: 1,
@@ -40,8 +38,6 @@ void main() {
       occurredAt: DateTime(now.year, now.month, 2),
       amount: 20000,
       memo: '병원',
-      accountId: 1,
-      accountName: '현금',
       categoryId: 2,
       categoryName: '건강',
       paymentMethodId: 1,
@@ -50,7 +46,6 @@ void main() {
     final report = ReportSummary(
       totalExpense: 30000,
       previousMonthExpense: 20000,
-      totalIncome: 0,
       remainingBudget: 70000,
       period: BudgetPeriodRange(
         startDate: month,

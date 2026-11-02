@@ -5,7 +5,6 @@ import 'transaction_record.dart';
 
 class HomeSummary {
   const HomeSummary({
-    required this.totalBalance,
     required this.month,
     required this.monthlyExpense,
     required this.budgetUsages,
@@ -13,7 +12,6 @@ class HomeSummary {
     required this.monthlyTransactions,
   });
 
-  final Money totalBalance;
   final DateTime month;
   final Money monthlyExpense;
   final List<BudgetUsage> budgetUsages;
@@ -21,7 +19,6 @@ class HomeSummary {
   final List<TransactionRecord> monthlyTransactions;
 
   static final empty = HomeSummary(
-    totalBalance: Money.zero,
     month: DateTime(2000),
     monthlyExpense: Money.zero,
     budgetUsages: const [],

@@ -34,9 +34,9 @@ class ManageScreen extends StatelessWidget {
             ),
             _ManageTile(
               icon: Icons.account_balance_outlined,
-              title: '결제수단과 계좌',
-              subtitle: '현금, 카드, 통장 잔액',
-              route: '/manage/accounts-payment',
+              title: '결제수단',
+              subtitle: '내가 쓰는 결제수단 이름 관리',
+              route: '/manage/payment-methods',
             ),
             _ManageTile(
               icon: Icons.bookmarks_outlined,

@@ -1,12 +1,13 @@
 name: well_spent_log
 description: "A local-first personal budget tracker for quick spending awareness."
 publish_to: "none"
-version: 1.0.0+1
+version: 2.0.2+4
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
 
 dependencies:
+  archive: ^4.0.9
   crypto: ^3.0.7
   file_selector: ^1.1.0
   flutter:

@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
-import '../domain/models/transaction_type.dart';
 import '../features/home/home_screen.dart';
 import '../features/manage/manage_screen.dart';
 import '../features/report/report_screen.dart';
 import '../features/transaction/transaction_form_sheet.dart';
 import '../features/transactions/transactions_screen.dart';
 import '../shared/widgets/quick_entry_fab.dart';
-import '../shared/widgets/transaction_type_sheet.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -73,7 +71,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         child: IndexedStack(index: _selectedIndex, children: screens),
       ),
       floatingActionButton: QuickEntryFab(
-        onPressed: () => _showTransactionTypeSheet(context),
+        onPressed: () => _showExpenseSheet(context),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: BottomAppBar(
@@ -126,23 +124,13 @@ class _AppShellState extends ConsumerState<AppShell> {
     setState(() => _selectedIndex = 1);
   }
 
-  Future<void> _showTransactionTypeSheet(BuildContext context) async {
-    final type = await showModalBottomSheet<TransactionType>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => const TransactionTypeSheet(),
-    );
-
-    if (!context.mounted || type == null) {
-      return;
-    }
-
+  Future<void> _showExpenseSheet(BuildContext context) async {
     final transactionId = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (context) => TransactionFormSheet(transactionType: type),
+      builder: (context) => const TransactionFormSheet(),
     );
     if (!context.mounted || transactionId == null) {
       return;

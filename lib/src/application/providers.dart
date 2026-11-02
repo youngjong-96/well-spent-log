@@ -7,7 +7,6 @@ import '../data/services/backup_service.dart';
 import '../data/services/lock_service.dart';
 import '../data/services/notification_service.dart';
 import '../data/settings/settings_store.dart';
-import '../domain/models/account.dart';
 import '../domain/models/category.dart';
 import '../domain/models/expense_template.dart';
 import '../domain/models/home_summary.dart';
@@ -92,11 +91,6 @@ final homeSummaryProvider = FutureProvider<HomeSummary>((ref) async {
 final categoriesProvider = FutureProvider<List<SpendingCategory>>((ref) async {
   ref.watch(dataRevisionProvider);
   return ref.watch(financeRepositoryProvider).listCategories();
-});
-
-final accountsProvider = FutureProvider<List<Account>>((ref) async {
-  ref.watch(dataRevisionProvider);
-  return ref.watch(financeRepositoryProvider).listAccounts();
 });
 
 final paymentMethodsProvider = FutureProvider<List<PaymentMethod>>((ref) async {

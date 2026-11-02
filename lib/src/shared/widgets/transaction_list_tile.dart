@@ -40,7 +40,6 @@ class TransactionListTile extends StatelessWidget {
         child: Icon(
           switch (record.type) {
             RecordType.expense => categoryIconFor(record.categoryName),
-            RecordType.income => Icons.add_card_outlined,
             RecordType.refund => Icons.replay_outlined,
           },
           color: categoryColor,
@@ -57,7 +56,7 @@ class TransactionListTile extends StatelessWidget {
       subtitle: Text(
         [
           formatShortDate(record.occurredAt),
-          record.paymentMethodName ?? record.accountName,
+          record.paymentMethodName ?? '',
         ].where((value) => value.isNotEmpty).join(' · '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

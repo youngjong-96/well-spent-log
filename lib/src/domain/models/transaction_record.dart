@@ -1,17 +1,15 @@
 enum RecordType {
   expense,
-  income,
   refund;
 
   String get label => switch (this) {
     expense => '지출',
-    income => '수입',
     refund => '환불',
   };
 
   int signedAmount(int amount) => switch (this) {
     expense => -amount,
-    income || refund => amount,
+    refund => amount,
   };
 }
 
@@ -22,8 +20,6 @@ class TransactionRecord {
     required this.occurredAt,
     required this.amount,
     required this.memo,
-    required this.accountId,
-    required this.accountName,
     this.categoryId,
     this.categoryName,
     this.categoryColorHex,
@@ -38,8 +34,6 @@ class TransactionRecord {
   final DateTime occurredAt;
   final int amount;
   final String memo;
-  final int accountId;
-  final String accountName;
   final int? categoryId;
   final String? categoryName;
   final String? categoryColorHex;
@@ -58,8 +52,6 @@ class TransactionRecord {
       occurredAt: DateTime.parse(map['occurred_at']! as String),
       amount: map['amount']! as int,
       memo: (map['memo'] as String?) ?? '',
-      accountId: map['account_id']! as int,
-      accountName: (map['account_name'] as String?) ?? '',
       categoryId: map['category_id'] as int?,
       categoryName: map['category_name'] as String?,
       categoryColorHex: map['category_color_hex'] as String?,

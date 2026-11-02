@@ -21,7 +21,6 @@ class ReportSummary {
   const ReportSummary({
     required this.totalExpense,
     required this.previousMonthExpense,
-    required this.totalIncome,
     required this.remainingBudget,
     required this.period,
     required this.budgetUsages,
@@ -32,7 +31,6 @@ class ReportSummary {
 
   final int totalExpense;
   final int previousMonthExpense;
-  final int totalIncome;
   final int remainingBudget;
   final BudgetPeriodRange period;
   final List<BudgetUsage> budgetUsages;

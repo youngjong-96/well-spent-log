@@ -19,7 +19,6 @@ class AppColors {
   static const primary = skyBlue;
   static const primaryContainer = softBlue;
   static const accent = skyBlue;
-  static const income = graphite;
   static const warning50 = skyBlue;
   static const warning80 = navyBlue;
   static const overBudget = navyBlue;

@@ -278,11 +278,7 @@ class _CategoryDetailsSheet extends ConsumerWidget {
           }
           final records =
               data.monthlyTransactions
-                  .where(
-                    (record) =>
-                        record.categoryId == categoryId &&
-                        record.type != RecordType.income,
-                  )
+                  .where((record) => record.categoryId == categoryId)
                   .toList()
                 ..sort((a, b) {
                   final date = b.occurredAt.compareTo(a.occurredAt);

@@ -2,23 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers.dart';
-import '../../domain/models/account.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/expense_template.dart';
 import '../../domain/models/payment_method.dart';
 import '../../domain/models/transaction_draft.dart';
 import '../../domain/models/transaction_record.dart';
-import '../../domain/models/transaction_type.dart';
 import '../../shared/formatters.dart';
 
 class TransactionFormSheet extends ConsumerStatefulWidget {
-  const TransactionFormSheet({
-    required this.transactionType,
-    this.record,
-    super.key,
-  });
+  const TransactionFormSheet({this.record, super.key});
 
-  final TransactionType transactionType;
   final TransactionRecord? record;
 
   static Future<int?> edit(
@@ -31,12 +24,7 @@ class TransactionFormSheet extends ConsumerStatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => TransactionFormSheet(
-        transactionType: record.type == RecordType.income
-            ? TransactionType.income
-            : TransactionType.expense,
-        record: record,
-      ),
+      builder: (_) => TransactionFormSheet(record: record),
     );
     if (context.mounted && transactionId != null) {
       messenger
@@ -74,7 +62,6 @@ class TransactionFormSheet extends ConsumerStatefulWidget {
               amount: record.amount,
               categoryId: record.categoryId,
               paymentMethodId: record.paymentMethodId,
-              accountId: record.accountId,
               memo: record.memo,
               refundedExpenseId: record.refundedExpenseId,
             ),
@@ -116,12 +103,9 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   DateTime _date = DateTime.now();
   int? _categoryId;
   int? _paymentMethodId;
-  int? _accountId;
   int? _refundedExpenseId;
   bool _isRefund = false;
   bool _saving = false;
-
-  bool get _isExpense => widget.transactionType == TransactionType.expense;
 
   @override
   void initState() {
@@ -133,7 +117,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
       _date = record.occurredAt;
       _categoryId = record.categoryId;
       _paymentMethodId = record.paymentMethodId;
-      _accountId = record.accountId;
       _isRefund = record.type == RecordType.refund;
       _refundedExpenseId = record.refundedExpenseId;
     }
@@ -150,9 +133,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   Future<_FormOptions> _loadOptions() async {
     final repository = ref.read(financeRepositoryProvider);
     final categories = await repository.listCategories(
-      includeInactive: widget.record != null,
-    );
-    final accounts = await repository.listAccounts(
       includeInactive: widget.record != null,
     );
     final methods = await repository.listPaymentMethods(
@@ -176,19 +156,16 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
     final lastSelection = await repository.getLastExpenseSelection();
     if (widget.record != null) {
       // Keep the original selections, including archived options.
-    } else if (_isExpense) {
+    } else {
       _categoryId = categories.any((item) => item.id == lastSelection.$1)
           ? lastSelection.$1
           : categories.firstOrNull?.id;
       _paymentMethodId = methods.any((item) => item.id == lastSelection.$2)
           ? lastSelection.$2
           : methods.firstOrNull?.id;
-    } else {
-      _accountId = accounts.firstOrNull?.id;
     }
     return _FormOptions(
       categories: categories,
-      accounts: accounts,
       methods: methods,
       templates: templates,
       recentExpenses: recentExpenses,
@@ -256,9 +233,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    widget.record != null
-                                        ? (_isExpense ? '지출 수정' : '수입 수정')
-                                        : (_isExpense ? '지출 추가' : '수입 추가'),
+                                    widget.record != null ? '지출 수정' : '지출 추가',
                                     style: Theme.of(
                                       context,
                                     ).textTheme.headlineMedium,
@@ -272,7 +247,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ],
                             ),
                             if (widget.record == null &&
-                                _isExpense &&
                                 (options.templates.isNotEmpty ||
                                     options.recentExpenses.isNotEmpty)) ...[
                               const SizedBox(height: 12),
@@ -361,7 +335,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ],
                             ),
                             const SizedBox(height: 16),
-                            if (_isExpense) ...[
+                            ...[
                               SegmentedButton<bool>(
                                 segments: const [
                                   ButtonSegment(
@@ -449,28 +423,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                                   },
                                 ),
                               ],
-                            ] else
-                              DropdownButtonFormField<int>(
-                                initialValue: _accountId,
-                                decoration: const InputDecoration(
-                                  labelText: '입금 계좌',
-                                  prefixIcon: Icon(
-                                    Icons.account_balance_outlined,
-                                  ),
-                                ),
-                                items: [
-                                  for (final account in options.accounts)
-                                    DropdownMenuItem(
-                                      value: account.id,
-                                      child: Text(account.name),
-                                    ),
-                                ],
-                                onTap: _dismissKeyboard,
-                                onChanged: (value) =>
-                                    setState(() => _accountId = value),
-                                validator: (value) =>
-                                    value == null ? '입금 계좌를 선택해 주세요.' : null,
-                              ),
+                            ],
                             const SizedBox(height: 12),
                             ListTile(
                               contentPadding: const EdgeInsets.symmetric(
@@ -525,7 +478,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: Text(
-                                  '입력한 금액은 지출에서 차감되고 계좌 잔액에 더해집니다.',
+                                  '입력한 금액만큼 지출이 줄고 남은 예산이 늘어납니다.',
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ),
@@ -629,32 +582,15 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
       return;
     }
     final amount = parseAmount(_amountController.text)!;
-    final paymentMethod = _isExpense
-        ? options.methods
-              .where((item) => item.id == _paymentMethodId)
-              .firstOrNull
-        : null;
-    final accountId = _isExpense ? paymentMethod?.accountId : _accountId;
-    if (accountId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('계좌 정보를 확인하지 못했어요. 결제수단이나 계좌를 다시 선택해 주세요.'),
-        ),
-      );
-      return;
-    }
     setState(() => _saving = true);
     try {
       final repository = ref.read(financeRepositoryProvider);
       final draft = TransactionDraft(
-        type: _isExpense
-            ? (_isRefund ? RecordType.refund : RecordType.expense)
-            : RecordType.income,
+        type: _isRefund ? RecordType.refund : RecordType.expense,
         occurredAt: _date,
         amount: amount,
-        categoryId: _isExpense ? _categoryId : null,
-        paymentMethodId: _isExpense ? _paymentMethodId : null,
-        accountId: accountId,
+        categoryId: _categoryId,
+        paymentMethodId: _paymentMethodId,
         memo: _memoController.text,
         refundedExpenseId: _isRefund ? _refundedExpenseId : null,
       );
@@ -690,14 +626,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
 class _FormOptions {
   const _FormOptions({
     required this.categories,
-    required this.accounts,
     required this.methods,
     required this.templates,
     required this.recentExpenses,
   });
 
   final List<SpendingCategory> categories;
-  final List<Account> accounts;
   final List<PaymentMethod> methods;
   final List<ExpenseTemplate> templates;
   final List<TransactionRecord> recentExpenses;

@@ -323,7 +323,6 @@ class _MonthCalendar extends StatelessWidget {
               (sum, record) => switch (record.type) {
                 RecordType.expense => sum + record.amount,
                 RecordType.refund => sum - record.amount,
-                RecordType.income => sum,
               },
             );
             final colors = dayRecords

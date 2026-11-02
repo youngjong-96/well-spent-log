@@ -17,9 +17,8 @@ void main() {
     expect(usage.remainingAmount, 125000);
   });
 
-  test('applies the correct account sign for every record type', () {
+  test('applies the correct spending sign for every record type', () {
     expect(RecordType.expense.signedAmount(10000), -10000);
-    expect(RecordType.income.signedAmount(10000), 10000);
     expect(RecordType.refund.signedAmount(10000), 10000);
   });
 }
