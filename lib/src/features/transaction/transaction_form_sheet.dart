@@ -99,6 +99,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
+  final _amountFocus = FocusNode();
+  final _categoryFocus = FocusNode();
+  final _paymentFocus = FocusNode();
+  final _refundFocus = FocusNode();
+  final _dateFocus = FocusNode();
+  final _memoFocus = FocusNode();
   late Future<_FormOptions> _optionsFuture;
   DateTime _date = DateTime.now();
   int? _categoryId;
@@ -106,10 +112,31 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   int? _refundedExpenseId;
   bool _isRefund = false;
   bool _saving = false;
+  int _refundChoiceCount = 0;
+  FocusNode? _lastFocusedField;
+
+  List<FocusNode> get _fieldOrder => [
+    _amountFocus,
+    _categoryFocus,
+    _paymentFocus,
+    if (_isRefund && _refundChoiceCount > 0) _refundFocus,
+    _dateFocus,
+    _memoFocus,
+  ];
 
   @override
   void initState() {
     super.initState();
+    for (final node in [
+      _amountFocus,
+      _categoryFocus,
+      _paymentFocus,
+      _refundFocus,
+      _dateFocus,
+      _memoFocus,
+    ]) {
+      node.addListener(_onFieldFocusChanged);
+    }
     final record = widget.record;
     if (record != null) {
       _amountController.text = formatAmount(record.amount);
@@ -125,6 +152,17 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
 
   @override
   void dispose() {
+    for (final node in [
+      _amountFocus,
+      _categoryFocus,
+      _paymentFocus,
+      _refundFocus,
+      _dateFocus,
+      _memoFocus,
+    ]) {
+      node.removeListener(_onFieldFocusChanged);
+      node.dispose();
+    }
     _amountController.dispose();
     _memoController.dispose();
     super.dispose();
@@ -214,6 +252,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
               );
             }
             final options = snapshot.data!;
+            _refundChoiceCount = options.recentExpenses.length;
             return DraggableScrollableSheet(
               expand: false,
               initialChildSize: 0.92,
@@ -225,10 +264,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                   child: Column(
                     children: [
                       Expanded(
-                        child: ListView(
+                        child: SingleChildScrollView(
                           controller: scrollController,
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                          children: [
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
                             Row(
                               children: [
                                 Expanded(
@@ -300,11 +341,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                             const SizedBox(height: 20),
                             TextFormField(
                               controller: _amountController,
+                              focusNode: _amountFocus,
                               autofocus: true,
                               keyboardType: TextInputType.number,
                               inputFormatters: [const AmountInputFormatter()],
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => _dismissKeyboard(),
+                              textInputAction: TextInputAction.next,
+                              onFieldSubmitted: (_) => _focusNextField(),
                               onTapOutside: (_) => _dismissKeyboard(),
                               style: Theme.of(context).textTheme.headlineLarge
                                   ?.copyWith(fontWeight: FontWeight.w700),
@@ -356,6 +398,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ),
                               const SizedBox(height: 16),
                               DropdownButtonFormField<int>(
+                                focusNode: _categoryFocus,
                                 initialValue: _categoryId,
                                 decoration: const InputDecoration(
                                   labelText: '카테고리',
@@ -376,6 +419,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ),
                               const SizedBox(height: 12),
                               DropdownButtonFormField<int>(
+                                focusNode: _paymentFocus,
                                 initialValue: _paymentMethodId,
                                 decoration: const InputDecoration(
                                   labelText: '결제수단',
@@ -397,6 +441,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               if (_isRefund) ...[
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<int>(
+                                  focusNode: _refundFocus,
                                   initialValue:
                                       options.recentExpenses.any(
                                         (r) => r.id == _refundedExpenseId,
@@ -425,24 +470,35 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ],
                             ],
                             const SizedBox(height: 12),
-                            ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
+                            Focus(
+                              focusNode: _dateFocus,
+                              child: ListenableBuilder(
+                                listenable: _dateFocus,
+                                builder: (context, _) {
+                                  final focused = _dateFocus.hasFocus;
+                                  final scheme = Theme.of(context).colorScheme;
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(
+                                        color: focused
+                                            ? scheme.primary
+                                            : scheme.outlineVariant,
+                                        width: focused ? 1.5 : 1,
+                                      ),
+                                    ),
+                                    leading: const Icon(
+                                      Icons.calendar_today_outlined,
+                                    ),
+                                    title: const Text('날짜'),
+                                    trailing: Text(formatShortDate(_date)),
+                                    onTap: _pickDate,
+                                  );
+                                },
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                side: BorderSide(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.outlineVariant,
-                                ),
-                              ),
-                              leading: const Icon(
-                                Icons.calendar_today_outlined,
-                              ),
-                              title: const Text('날짜'),
-                              trailing: Text(formatShortDate(_date)),
-                              onTap: _pickDate,
                             ),
                             const SizedBox(height: 8),
                             Row(
@@ -467,7 +523,10 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _memoController,
+                              focusNode: _memoFocus,
                               maxLength: 80,
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (_) => _dismissKeyboard(),
                               onTapOutside: (_) => _dismissKeyboard(),
                               decoration: const InputDecoration(
                                 labelText: '메모 (선택)',
@@ -482,7 +541,8 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                       DecoratedBox(
@@ -498,19 +558,47 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                         ),
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: _saving ? null : () => _save(options),
-                              icon: _saving
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
+                          child: TextFieldTapRegion(
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _canFocusNextField
+                                        ? _focusNextField
+                                        : null,
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(0, 48),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(
+                                          12,
+                                        ),
                                       ),
-                                    )
-                                  : const Icon(Icons.check),
-                              label: Text(_saving ? '저장 중' : '저장'),
+                                    ),
+                                    icon: const Icon(Icons.arrow_downward),
+                                    label: const Text('다음'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: _saving
+                                        ? null
+                                        : () => _save(options),
+                                    style: FilledButton.styleFrom(
+                                      minimumSize: const Size(0, 48),
+                                    ),
+                                    icon: _saving
+                                        ? const SizedBox.square(
+                                            dimension: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.check),
+                                    label: Text(_saving ? '저장 중' : '저장'),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -575,6 +663,56 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
 
   void _dismissKeyboard() {
     FocusManager.instance.primaryFocus?.unfocus();
+  }
+
+  void _onFieldFocusChanged() {
+    for (final node in _fieldOrder) {
+      if (node.hasFocus) {
+        _lastFocusedField = node;
+        break;
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  // Index of the field that "다음" should advance from.
+  // A tap outside the field can clear focus before the button runs. The last
+  // field that actually had focus is used so the button keeps moving forward.
+  int _anchorIndex(List<FocusNode> order) {
+    final current = order.indexWhere((node) => node.hasFocus);
+    if (current >= 0) return current;
+    final last = _lastFocusedField;
+    if (last == null) return -1;
+    final stored = order.indexOf(last);
+    if (stored >= 0) return stored;
+    if (last == _refundFocus) {
+      return order.indexOf(_dateFocus) - 1;
+    }
+    return -1;
+  }
+
+  bool get _canFocusNextField {
+    if (_saving) return false;
+    final order = _fieldOrder;
+    return _anchorIndex(order) < order.length - 1;
+  }
+
+  void _focusNextField() {
+    final order = _fieldOrder;
+    final nextIndex = _anchorIndex(order) + 1;
+    if (nextIndex < 0 || nextIndex >= order.length) return;
+    final target = order[nextIndex];
+    target.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final fieldContext = target.context;
+      if (fieldContext == null || !fieldContext.mounted) return;
+      Scrollable.ensureVisible(
+        fieldContext,
+        alignment: 0.25,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   Future<void> _save(_FormOptions options) async {
