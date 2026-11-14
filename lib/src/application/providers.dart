@@ -24,6 +24,30 @@ final settingsStoreProvider = Provider<SettingsStore>((ref) {
   return SettingsStore();
 });
 
+final weeklyTotalsVisibleProvider =
+    AsyncNotifierProvider<WeeklyTotalsVisibleController, bool>(
+      WeeklyTotalsVisibleController.new,
+    );
+
+class WeeklyTotalsVisibleController extends AsyncNotifier<bool> {
+  @override
+  Future<bool> build() {
+    return ref.watch(settingsStoreProvider).getWeeklyTotalsVisible();
+  }
+
+  Future<void> setVisible(bool visible) async {
+    final previous = state;
+    state = const AsyncLoading<bool>().copyWithPrevious(previous);
+    try {
+      await ref.read(settingsStoreProvider).setWeeklyTotalsVisible(visible);
+      state = AsyncData(visible);
+    } catch (_) {
+      state = previous;
+      rethrow;
+    }
+  }
+}
+
 final themeModeProvider = NotifierProvider<ThemeModeController, ThemeMode>(
   ThemeModeController.new,
 );
