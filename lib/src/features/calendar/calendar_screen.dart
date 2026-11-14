@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers.dart';
+import '../../domain/usecases/calculate_weekly_totals.dart';
 import '../transaction/transaction_form_sheet.dart';
 import '../../domain/models/transaction_record.dart';
 import '../../shared/formatters.dart';
@@ -121,6 +122,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       setState(() => _selectedDate = date);
                     },
                   ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                sliver: SliverToBoxAdapter(
+                  child: _WeeklyTotals(month: _month, records: records),
                 ),
               ),
               SliverPadding(
@@ -304,7 +311,7 @@ class _MonthCalendar extends StatelessWidget {
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: 42,
+          itemCount: ((firstDayOffset + daysInMonth + 6) ~/ 7) * 7,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
             childAspectRatio: 0.78,
@@ -320,10 +327,7 @@ class _MonthCalendar extends StatelessWidget {
                 .toList();
             final expenseAmount = dayRecords.fold<int>(
               0,
-              (sum, record) => switch (record.type) {
-                RecordType.expense => sum + record.amount,
-                RecordType.refund => sum - record.amount,
-              },
+              (sum, record) => sum - record.signedAmount,
             );
             final colors = dayRecords
                 .where((record) => record.categoryColorHex != null)
@@ -418,6 +422,113 @@ class _CalendarError extends StatelessWidget {
         icon: const Icon(Icons.refresh),
         label: const Text('달력 다시 불러오기'),
       ),
+    );
+  }
+}
+
+class _WeeklyTotals extends ConsumerWidget {
+  const _WeeklyTotals({required this.month, required this.records});
+
+  final DateTime month;
+  final List<TransactionRecord> records;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final visibility = ref.watch(weeklyTotalsVisibleProvider);
+    final visible = visibility.value ?? true;
+    final weeks = calculateWeeklyTotals(month, records);
+    final total = weeks.fold<int>(0, (sum, week) => sum + week.amount);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final today = DateTime.now();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text('주별 합계', style: theme.textTheme.titleMedium),
+            IconButton(
+              tooltip: visible ? '주별 합계 숨기기' : '주별 합계 표시',
+              onPressed: visibility.isLoading
+                  ? null
+                  : () async {
+                      try {
+                        await ref
+                            .read(weeklyTotalsVisibleProvider.notifier)
+                            .setVisible(!visible);
+                      } catch (_) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('표시 설정을 저장하지 못했어요.')),
+                        );
+                      }
+                    },
+              icon: Icon(visible ? Icons.expand_less : Icons.expand_more),
+            ),
+            Expanded(
+              child: Text(
+                '이달 ${formatWon(total)}',
+                textAlign: TextAlign.end,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: scheme.primary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (visible)
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (var index = 0; index < weeks.length; index++) ...[
+                  if (index > 0) const Divider(height: 1),
+                  Container(
+                    key: ValueKey('weekly-total-${index + 1}'),
+                    color: weeks[index].contains(today)
+                        ? scheme.primaryContainer
+                        : scheme.surface,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${index + 1}주차${weeks[index].contains(today) ? '  이번 주' : ''}',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${weeks[index].start.month}/${weeks[index].start.day}~${weeks[index].end.month}/${weeks[index].end.day}',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Flexible(
+                          child: Text(
+                            formatWon(weeks[index].amount),
+                            textAlign: TextAlign.end,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: weeks[index].contains(today)
+                                  ? scheme.primary
+                                  : scheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
