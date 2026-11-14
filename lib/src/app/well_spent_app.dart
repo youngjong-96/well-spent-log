@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import 'app_shell.dart';
 import '../features/lock/lock_gate.dart';
-import '../features/manage/accounts_payment_screen.dart';
+import '../features/manage/payment_methods_screen.dart';
 import '../features/manage/backup_screen.dart';
 import '../features/manage/category_budget_screen.dart';
 import '../features/manage/security_screen.dart';
@@ -21,8 +21,8 @@ final _router = GoRouter(
       builder: (context, state) => const CategoryBudgetScreen(),
     ),
     GoRoute(
-      path: '/manage/accounts-payment',
-      builder: (context, state) => const AccountsPaymentScreen(),
+      path: '/manage/payment-methods',
+      builder: (context, state) => const PaymentMethodsScreen(),
     ),
     GoRoute(
       path: '/manage/templates',

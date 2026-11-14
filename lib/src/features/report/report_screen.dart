@@ -165,7 +165,6 @@ class _MonthlyReport extends ConsumerWidget {
         ];
         final categoryTotals = <String, int>{};
         for (final record in data.transactions) {
-          if (record.type == RecordType.income) continue;
           final category = record.categoryName ?? '미분류';
           final amount = record.type == RecordType.refund
               ? -record.amount
@@ -349,14 +348,6 @@ class _SummaryBand extends StatelessWidget {
             child: _Metric(
               label: '총지출',
               value: formatWon(data.totalExpense),
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
-          ),
-          SizedBox(
-            width: MediaQuery.sizeOf(context).width / 2 - 40,
-            child: _Metric(
-              label: '총수입',
-              value: formatWon(data.totalIncome, signed: true),
               color: Theme.of(context).colorScheme.onSurface,
             ),
           ),

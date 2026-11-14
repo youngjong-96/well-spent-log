@@ -1,27 +1,28 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../local/app_database.dart';
+import '../local/spending_data.dart';
+
 class BackupService {
-  BackupService(this._appDatabase);
+  BackupService(this._appDatabase, {Directory? exportDirectory})
+    : _exportDirectory = exportDirectory;
 
   final AppDatabase _appDatabase;
+  final Directory? _exportDirectory;
 
-  static const schemaVersion = 1;
-  static const _tables = [
-    'categories',
-    'accounts',
-    'payment_methods',
-    'budget_periods',
-    'monthly_budgets',
-    'transactions',
-    'account_ledger',
-    'expense_templates',
-    'alert_history',
-  ];
+  static const schemaVersion = 2;
+  static const _tables = spendingTables;
+
+  Future<File?> findMigrationBackup() async {
+    final db = await _appDatabase.database;
+    final file = File('${db.path}.pre-v3.json');
+    return await file.exists() ? file : null;
+  }
 
   Future<File> createJsonBackup() async {
     final db = await _appDatabase.database;
@@ -32,7 +33,19 @@ class BackupService {
     for (final table in _tables) {
       data[table] = await _rowsForExport(db, table);
     }
-    final directory = await getTemporaryDirectory();
+    // A deleted original expense is excluded from backups; detach its refunds.
+    final transactions = data['transactions']! as List<Map<String, Object?>>;
+    final includedIds = transactions.map((row) => row['id']).toSet();
+    data['transactions'] = transactions
+        .map(
+          (row) => {
+            ...row,
+            if (!includedIds.contains(row['refunded_expense_id']))
+              'refunded_expense_id': null,
+          },
+        )
+        .toList();
+    final directory = _exportDirectory ?? await getTemporaryDirectory();
     final file = File(
       '${directory.path}${Platform.pathSeparator}'
       'well_spent_log_backup_${_timestamp()}.json',
@@ -47,16 +60,15 @@ class BackupService {
     final db = await _appDatabase.database;
     final rows = await db.rawQuery('''
       SELECT t.occurred_at, t.type, t.amount, c.name AS category,
-        pm.name AS payment_method, a.name AS account, t.memo
+        pm.name AS payment_method, t.memo
       FROM transactions t
       LEFT JOIN categories c ON c.id = t.category_id
       LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
-      JOIN accounts a ON a.id = t.account_id
       WHERE t.deleted_at IS NULL
       ORDER BY t.occurred_at, t.id
     ''');
     final buffer = StringBuffer('\uFEFF');
-    buffer.writeln('날짜,구분,금액,카테고리,결제수단,계좌,메모');
+    buffer.writeln('날짜,구분,금액,카테고리,결제수단,메모');
     for (final row in rows) {
       buffer.writeln(
         [
@@ -65,12 +77,11 @@ class BackupService {
           row['amount'],
           row['category'] ?? '',
           row['payment_method'] ?? '',
-          row['account'] ?? '',
           row['memo'] ?? '',
         ].map(_csvCell).join(','),
       );
     }
-    final directory = await getTemporaryDirectory();
+    final directory = _exportDirectory ?? await getTemporaryDirectory();
     final file = File(
       '${directory.path}${Platform.pathSeparator}'
       'well_spent_log_${_timestamp()}.csv',
@@ -78,25 +89,38 @@ class BackupService {
     return file.writeAsString(buffer.toString(), flush: true);
   }
 
+  Future<File> createCsvZipExport() async {
+    final csv = await createCsvExport();
+    final bytes = await csv.readAsBytes();
+    final archive = Archive()
+      ..addFile(ArchiveFile(csv.uri.pathSegments.last, bytes.length, bytes));
+    final zip = File('${csv.path.substring(0, csv.path.length - 4)}.zip');
+    return zip.writeAsBytes(ZipEncoder().encode(archive), flush: true);
+  }
+
   Future<void> restoreJson(List<int> bytes) async {
     final decoded = jsonDecode(utf8.decode(bytes));
     if (decoded is! Map<String, Object?> ||
-        decoded['schemaVersion'] != schemaVersion) {
+        ![1, schemaVersion].contains(decoded['schemaVersion'])) {
       throw const FormatException('지원하지 않는 백업 파일입니다.');
     }
+    final data = decoded['schemaVersion'] == 1
+        ? convertLegacyData(decoded)
+        : decoded;
     for (final table in _tables) {
-      if (decoded[table] is! List) {
+      if (data[table] is! List) {
         throw FormatException('$table 데이터가 없습니다.');
       }
     }
     final db = await _appDatabase.database;
     await db.transaction((txn) async {
       await txn.execute('PRAGMA defer_foreign_keys = ON');
+      await txn.update('transactions', {'refunded_expense_id': null});
       for (final table in _tables.reversed) {
         await txn.delete(table);
       }
       for (final table in _tables) {
-        final rows = decoded[table]! as List;
+        final rows = data[table]! as List;
         for (final row in rows) {
           if (row is! Map) {
             throw FormatException('$table 데이터 형식이 잘못됐습니다.');
@@ -108,23 +132,17 @@ class BackupService {
           );
         }
       }
+      // Reject deferred violations inside the transaction so replacement rolls
+      // back cleanly rather than failing at COMMIT on a platform driver.
+      if ((await txn.rawQuery('PRAGMA foreign_key_check')).isNotEmpty) {
+        throw const FormatException('백업 데이터의 연결 정보가 올바르지 않습니다.');
+      }
     });
   }
 
   Future<List<Map<String, Object?>>> _rowsForExport(Database db, String table) {
     if (table == 'transactions') {
       return db.query(table, where: 'deleted_at IS NULL');
-    }
-    if (table == 'account_ledger') {
-      return db.rawQuery('''
-        SELECT l.*
-        FROM account_ledger l
-        WHERE l.source_id IS NULL
-          OR EXISTS (
-            SELECT 1 FROM transactions t
-            WHERE t.id = l.source_id AND t.deleted_at IS NULL
-          )
-      ''');
     }
     return db.query(table);
   }
@@ -143,7 +161,6 @@ class BackupService {
 
   String _typeLabel(String type) => switch (type) {
     'expense' => '지출',
-    'income' => '수입',
     'refund' => '환불',
     _ => type,
   };

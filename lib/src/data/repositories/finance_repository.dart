@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:sqflite/sqflite.dart';
 
-import '../../domain/models/account.dart';
 import '../../domain/models/budget_period_range.dart';
 import '../../domain/models/budget_usage.dart';
 import '../../domain/models/category.dart';
@@ -46,26 +45,19 @@ class FinanceRepository {
     final anchor = anchorDate ?? DateTime.now();
     final db = await _database.database;
     final period = await ensureBudgetPeriod(anchor);
-    final balanceRows = await db.rawQuery('''
-      SELECT COALESCE(SUM(balance), 0) AS total
-      FROM accounts
-      WHERE include_in_total = 1 AND is_active = 1
-    ''');
     final usages = await _getBudgetUsages(db, period);
     final month = DateTime(anchor.year, anchor.month);
     final monthly =
         (await listTransactions(
-            start: month,
-            endExclusive: DateTime(month.year, month.month + 1),
-          )).where((record) => record.type != RecordType.income).toList()
-          ..sort((a, b) {
-            final amountOrder = b.amount.compareTo(a.amount);
-            if (amountOrder != 0) return amountOrder;
-            final dateOrder = b.occurredAt.compareTo(a.occurredAt);
-            return dateOrder != 0 ? dateOrder : b.id.compareTo(a.id);
-          });
+          start: month,
+          endExclusive: DateTime(month.year, month.month + 1),
+        )).toList()..sort((a, b) {
+          final amountOrder = b.amount.compareTo(a.amount);
+          if (amountOrder != 0) return amountOrder;
+          final dateOrder = b.occurredAt.compareTo(a.occurredAt);
+          return dateOrder != 0 ? dateOrder : b.id.compareTo(a.id);
+        });
     return HomeSummary(
-      totalBalance: Money(_asInt(balanceRows.first['total'])),
       budgetUsages: usages,
       period: BudgetPeriodRange(
         startDate: period.startDate,
@@ -91,16 +83,6 @@ class FinanceRepository {
     return rows.map(SpendingCategory.fromMap).toList();
   }
 
-  Future<List<Account>> listAccounts({bool includeInactive = false}) async {
-    final db = await _database.database;
-    final rows = await db.query(
-      'accounts',
-      where: includeInactive ? null : 'is_active = 1',
-      orderBy: "CASE type WHEN 'cash' THEN 0 ELSE 1 END, id",
-    );
-    return rows.map(Account.fromMap).toList();
-  }
-
   Future<List<PaymentMethod>> listPaymentMethods({
     bool includeInactive = false,
   }) async {
@@ -108,7 +90,7 @@ class FinanceRepository {
     final rows = await db.query(
       'payment_methods',
       where: includeInactive ? null : 'is_active = 1',
-      orderBy: "CASE type WHEN 'cash' THEN 0 ELSE 1 END, id",
+      orderBy: 'id',
     );
     return rows.map(PaymentMethod.fromMap).toList();
   }
@@ -158,58 +140,76 @@ class FinanceRepository {
     return rows.map(TransactionRecord.fromMap).toList();
   }
 
-  Future<int> addTransaction(TransactionDraft draft) async {
-    if (draft.amount <= 0) {
-      throw ArgumentError.value(draft.amount, 'amount');
+  void _validateDraft(TransactionDraft draft) {
+    if (draft.amount <= 0 ||
+        draft.categoryId == null ||
+        draft.paymentMethodId == null) {
+      throw ArgumentError(
+        'A positive amount, category and payment method are required.',
+      );
     }
-    if (draft.type != RecordType.income && draft.categoryId == null) {
-      throw ArgumentError('지출과 환불에는 카테고리가 필요합니다.');
-    }
-    final db = await _database.database;
-    final now = DateTime.now().toIso8601String();
-    final id = await db.transaction<int>((txn) async {
-      final account = await _getAccount(txn, draft.accountId);
-      final delta = draft.type.signedAmount(draft.amount);
-      final nextBalance = account.balance + delta;
-      final transactionId = await txn.insert('transactions', {
-        'type': draft.type.name,
-        'occurred_at': draft.occurredAt.toIso8601String(),
-        'amount': draft.amount,
-        'category_id': draft.categoryId,
-        'payment_method_id': draft.paymentMethodId,
-        'account_id': draft.accountId,
-        'memo': draft.memo.trim(),
-        'refunded_expense_id': draft.refundedExpenseId,
-        'created_at': now,
-        'updated_at': now,
-      });
-      await txn.update(
-        'accounts',
-        {'balance': nextBalance, 'updated_at': now},
+  }
+
+  Map<String, Object?> _draftValues(TransactionDraft draft) => {
+    'type': draft.type.name,
+    'occurred_at': draft.occurredAt.toIso8601String(),
+    'amount': draft.amount,
+    'category_id': draft.categoryId,
+    'payment_method_id': draft.paymentMethodId,
+    'memo': draft.memo.trim(),
+    'refunded_expense_id': draft.type == RecordType.refund
+        ? draft.refundedExpenseId
+        : null,
+    'updated_at': DateTime.now().toIso8601String(),
+  };
+
+  Future<void> _validateReferences(
+    DatabaseExecutor db,
+    TransactionDraft draft, {
+    int? id,
+  }) async {
+    for (final entry in {
+      'categories': draft.categoryId,
+      'payment_methods': draft.paymentMethodId,
+    }.entries) {
+      if ((await db.query(
+        entry.key,
+        columns: ['id'],
         where: 'id = ?',
-        whereArgs: [draft.accountId],
-      );
-      await txn.insert('account_ledger', {
-        'account_id': draft.accountId,
-        'source_type': draft.type.name,
-        'source_id': transactionId,
-        'delta': delta,
-        'balance_after': nextBalance,
-        'created_at': now,
-      });
-      return transactionId;
-    });
-    if (draft.type != RecordType.income) {
-      await _settingsStore.setLastExpenseSelection(
-        categoryId: draft.categoryId!,
-        paymentMethodId: draft.paymentMethodId!,
-      );
-      await _evaluateBudgetAlerts(
-        categoryId: draft.categoryId!,
-        anchor: draft.occurredAt,
-      );
+        whereArgs: [entry.value],
+      )).isEmpty) {
+        throw ArgumentError('Missing category or payment method.');
+      }
     }
+    if (draft.type == RecordType.refund && draft.refundedExpenseId != null) {
+      final source = await _getTransaction(db, draft.refundedExpenseId!);
+      if (source.id == id ||
+          source.type != RecordType.expense ||
+          source.isDeleted) {
+        throw ArgumentError('Invalid original expense.');
+      }
+    }
+  }
+
+  Future<int> addTransaction(TransactionDraft draft) async {
+    _validateDraft(draft);
+    final db = await _database.database;
+    final id = await db.transaction<int>((txn) async {
+      await _validateReferences(txn, draft);
+      return txn.insert('transactions', {
+        ..._draftValues(draft),
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    });
+    await _settingsStore.setLastExpenseSelection(
+      categoryId: draft.categoryId!,
+      paymentMethodId: draft.paymentMethodId!,
+    );
     _notifyChanged();
+    await _evaluateBudgetAlerts(
+      categoryId: draft.categoryId!,
+      anchor: draft.occurredAt,
+    );
     return id;
   }
 
@@ -217,166 +217,53 @@ class FinanceRepository {
     int transactionId,
     TransactionDraft draft,
   ) async {
-    if (draft.amount <= 0) {
-      throw ArgumentError.value(draft.amount, 'amount');
-    }
-    if (draft.type != RecordType.income &&
-        (draft.categoryId == null || draft.paymentMethodId == null)) {
-      throw ArgumentError('지출과 환불에는 카테고리와 결제수단이 필요합니다.');
-    }
+    _validateDraft(draft);
     final db = await _database.database;
-    final now = DateTime.now().toIso8601String();
     final previous = await db.transaction<TransactionRecord>((txn) async {
       final record = await _getTransaction(txn, transactionId);
-      if (record.isDeleted) {
-        throw StateError('삭제된 내역은 수정할 수 없습니다.');
-      }
-      // Reverse the old effect and apply the new one atomically, even when
-      // the payment account or transaction type changes.
-      final deltas = <int, int>{record.accountId: -record.signedAmount};
-      deltas.update(
-        draft.accountId,
-        (value) => value + draft.type.signedAmount(draft.amount),
-        ifAbsent: () => draft.type.signedAmount(draft.amount),
-      );
-      for (final entry in deltas.entries) {
-        final account = await _getAccount(txn, entry.key);
-        final balance = account.balance + entry.value;
-        await txn.update(
-          'accounts',
-          {'balance': balance, 'updated_at': now},
-          where: 'id = ?',
-          whereArgs: [entry.key],
-        );
-        if (entry.value != 0) {
-          await txn.insert('account_ledger', {
-            'account_id': entry.key,
-            'source_type': 'update',
-            'source_id': transactionId,
-            'delta': entry.value,
-            'balance_after': balance,
-            'created_at': now,
-          });
-        }
-      }
+      if (record.isDeleted) throw StateError('Deleted transaction.');
+      await _validateReferences(txn, draft, id: transactionId);
       await txn.update(
         'transactions',
-        {
-          'type': draft.type.name,
-          'occurred_at': draft.occurredAt.toIso8601String(),
-          'amount': draft.amount,
-          'category_id': draft.categoryId,
-          'payment_method_id': draft.paymentMethodId,
-          'account_id': draft.accountId,
-          'memo': draft.memo.trim(),
-          'refunded_expense_id': draft.refundedExpenseId,
-          'updated_at': now,
-        },
+        _draftValues(draft),
         where: 'id = ?',
         whereArgs: [transactionId],
       );
       return record;
     });
     _notifyChanged();
-    if (previous.categoryId != null) {
-      await _evaluateBudgetAlerts(
-        categoryId: previous.categoryId!,
-        anchor: previous.occurredAt,
-      );
-    }
-    if (draft.categoryId != null) {
-      await _evaluateBudgetAlerts(
-        categoryId: draft.categoryId!,
-        anchor: draft.occurredAt,
-      );
-    }
+    await _evaluateBudgetAlerts(
+      categoryId: previous.categoryId!,
+      anchor: previous.occurredAt,
+    );
+    await _evaluateBudgetAlerts(
+      categoryId: draft.categoryId!,
+      anchor: draft.occurredAt,
+    );
   }
 
-  Future<void> softDeleteTransaction(int transactionId) async {
-    final db = await _database.database;
-    final now = DateTime.now();
-    int? categoryId;
-    DateTime? occurredAt;
-    await db.transaction((txn) async {
-      final record = await _getTransaction(txn, transactionId);
-      if (record.isDeleted) {
-        return;
-      }
-      categoryId = record.categoryId;
-      occurredAt = record.occurredAt;
-      final account = await _getAccount(txn, record.accountId);
-      final delta = -record.signedAmount;
-      final nextBalance = account.balance + delta;
-      await txn.update(
-        'transactions',
-        {
-          'deleted_at': now.toIso8601String(),
-          'updated_at': now.toIso8601String(),
-        },
-        where: 'id = ?',
-        whereArgs: [transactionId],
-      );
-      await txn.update(
-        'accounts',
-        {'balance': nextBalance, 'updated_at': now.toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [record.accountId],
-      );
-      await txn.insert('account_ledger', {
-        'account_id': record.accountId,
-        'source_type': 'delete',
-        'source_id': transactionId,
-        'delta': delta,
-        'balance_after': nextBalance,
-        'created_at': now.toIso8601String(),
-      });
-    });
-    if (categoryId != null && occurredAt != null) {
-      await _evaluateBudgetAlerts(categoryId: categoryId!, anchor: occurredAt!);
-    }
-    _notifyChanged();
-  }
+  Future<void> softDeleteTransaction(int id) => _setDeleted(id, true);
+  Future<void> restoreTransaction(int id) => _setDeleted(id, false);
 
-  Future<void> restoreTransaction(int transactionId) async {
+  Future<void> _setDeleted(int id, bool deleted) async {
     final db = await _database.database;
-    final now = DateTime.now();
-    int? categoryId;
-    DateTime? occurredAt;
-    await db.transaction((txn) async {
-      final record = await _getTransaction(txn, transactionId);
-      if (!record.isDeleted) {
-        return;
-      }
-      categoryId = record.categoryId;
-      occurredAt = record.occurredAt;
-      final account = await _getAccount(txn, record.accountId);
-      final delta = record.signedAmount;
-      final nextBalance = account.balance + delta;
+    final record = await db.transaction<TransactionRecord>((txn) async {
+      final record = await _getTransaction(txn, id);
+      if (record.isDeleted == deleted) return record;
+      final now = DateTime.now().toIso8601String();
       await txn.update(
         'transactions',
-        {'deleted_at': null, 'updated_at': now.toIso8601String()},
+        {'deleted_at': deleted ? now : null, 'updated_at': now},
         where: 'id = ?',
-        whereArgs: [transactionId],
+        whereArgs: [id],
       );
-      await txn.update(
-        'accounts',
-        {'balance': nextBalance, 'updated_at': now.toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [record.accountId],
-      );
-      await txn.insert('account_ledger', {
-        'account_id': record.accountId,
-        'source_type': 'restore',
-        'source_id': transactionId,
-        'delta': delta,
-        'balance_after': nextBalance,
-        'created_at': now.toIso8601String(),
-      });
+      return record;
     });
-    if (categoryId != null && occurredAt != null) {
-      await _evaluateBudgetAlerts(categoryId: categoryId!, anchor: occurredAt!);
-    }
     _notifyChanged();
+    await _evaluateBudgetAlerts(
+      categoryId: record.categoryId!,
+      anchor: record.occurredAt,
+    );
   }
 
   Future<void> purgeExpiredDeletedTransactions() async {
@@ -398,11 +285,6 @@ class FinanceRepository {
           'transactions',
           {'refunded_expense_id': null},
           where: 'refunded_expense_id = ?',
-          whereArgs: [id],
-        );
-        await txn.delete(
-          'account_ledger',
-          where: 'source_id = ?',
           whereArgs: [id],
         );
         await txn.delete('transactions', where: 'id = ?', whereArgs: [id]);
@@ -553,178 +435,28 @@ class FinanceRepository {
     _notifyChanged();
   }
 
-  Future<void> addAccount({
-    required String name,
-    required String bankName,
-    required String accountNumber,
-    required int openingBalance,
-    required bool includeInTotal,
-  }) async {
+  Future<void> savePaymentMethod({int? id, required String name}) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed.length > 40) {
+      throw ArgumentError('Invalid payment method name.');
+    }
     final db = await _database.database;
     final now = DateTime.now().toIso8601String();
-    await db.transaction((txn) async {
-      final id = await txn.insert('accounts', {
-        'type': AccountType.bank.name,
-        'name': name.trim(),
-        'bank_name': bankName.trim(),
-        'account_number': accountNumber.trim(),
-        'balance': openingBalance,
-        'include_in_total': includeInTotal ? 1 : 0,
+    if (id == null) {
+      await db.insert('payment_methods', {
+        'name': trimmed,
         'is_active': 1,
         'created_at': now,
         'updated_at': now,
       });
-      if (openingBalance != 0) {
-        await txn.insert('account_ledger', {
-          'account_id': id,
-          'source_type': 'opening',
-          'delta': openingBalance,
-          'balance_after': openingBalance,
-          'created_at': now,
-        });
-      }
-    });
-    _notifyChanged();
-  }
-
-  Future<void> adjustAccountBalance({
-    required int accountId,
-    required int newBalance,
-  }) async {
-    final db = await _database.database;
-    final now = DateTime.now().toIso8601String();
-    await db.transaction((txn) async {
-      final account = await _getAccount(txn, accountId);
-      final delta = newBalance - account.balance;
-      await txn.update(
-        'accounts',
-        {'balance': newBalance, 'updated_at': now},
-        where: 'id = ?',
-        whereArgs: [accountId],
-      );
-      await txn.insert('account_ledger', {
-        'account_id': accountId,
-        'source_type': 'adjustment',
-        'delta': delta,
-        'balance_after': newBalance,
-        'created_at': now,
-      });
-    });
-    _notifyChanged();
-  }
-
-  Future<void> setAccountIncluded({
-    required int accountId,
-    required bool included,
-  }) async {
-    final db = await _database.database;
-    await db.update(
-      'accounts',
-      {
-        'include_in_total': included ? 1 : 0,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [accountId],
-    );
-    _notifyChanged();
-  }
-
-  Future<void> removeAccount(int id) async {
-    final db = await _database.database;
-    final references = await db.rawQuery(
-      '''
-      SELECT
-        (SELECT COUNT(*) FROM transactions WHERE account_id = ?) +
-        (SELECT COUNT(*) FROM payment_methods WHERE account_id = ?) +
-        (SELECT COUNT(*) FROM account_ledger WHERE account_id = ?) AS count
-      ''',
-      [id, id, id],
-    );
-    if (_asInt(references.first['count']) > 0) {
-      final now = DateTime.now().toIso8601String();
-      await db.transaction((txn) async {
-        await txn.update(
-          'accounts',
-          {'is_active': 0, 'updated_at': now},
-          where: 'id = ?',
-          whereArgs: [id],
-        );
-        await txn.update(
-          'payment_methods',
-          {'is_active': 0, 'updated_at': now},
-          where: 'account_id = ?',
-          whereArgs: [id],
-        );
-      });
     } else {
-      await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
+      await db.update(
+        'payment_methods',
+        {'name': trimmed, 'updated_at': now},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
     }
-    _notifyChanged();
-  }
-
-  Future<void> addCard({
-    required String name,
-    required String company,
-    required int billingDay,
-    required int accountId,
-  }) async {
-    final db = await _database.database;
-    final now = DateTime.now().toIso8601String();
-    await db.insert('payment_methods', {
-      'type': PaymentMethodType.card.name,
-      'name': name.trim(),
-      'card_company': company.trim(),
-      'billing_day': billingDay,
-      'account_id': accountId,
-      'is_active': 1,
-      'created_at': now,
-      'updated_at': now,
-    });
-    _notifyChanged();
-  }
-
-  Future<void> updateAccount({
-    required int id,
-    required String name,
-    required String bankName,
-    required String accountNumber,
-  }) async {
-    final db = await _database.database;
-    await db.update(
-      'accounts',
-      {
-        'name': name.trim(),
-        'bank_name': bankName.trim(),
-        'account_number': accountNumber.trim(),
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    _notifyChanged();
-  }
-
-  Future<void> updateCard({
-    required int id,
-    required String name,
-    required String company,
-    required int billingDay,
-    required int accountId,
-  }) async {
-    final db = await _database.database;
-    await db.update(
-      'payment_methods',
-      {
-        'name': name.trim(),
-        'card_company': company.trim(),
-        'billing_day': billingDay,
-        'account_id': accountId,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
     _notifyChanged();
   }
 
@@ -801,9 +533,7 @@ class FinanceRepository {
         COALESCE(SUM(CASE
           WHEN type = 'expense' THEN amount
           WHEN type = 'refund' THEN -amount
-          ELSE 0 END), 0) AS expense,
-        COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0)
-          AS income
+          ELSE 0 END), 0) AS expense
       FROM transactions
       WHERE deleted_at IS NULL AND occurred_at >= ? AND occurred_at < ?
       ''',
@@ -852,11 +582,10 @@ class FinanceRepository {
     final transactions = (await listTransactions(
       start: start,
       endExclusive: end,
-    )).where((record) => record.type != RecordType.income).toList();
+    )).toList();
     return ReportSummary(
       totalExpense: _asInt(totalRows.first['expense']),
       previousMonthExpense: _asInt(previousRows.first['expense']),
-      totalIncome: _asInt(totalRows.first['income']),
       remainingBudget: totalBudget - periodSpent,
       period: BudgetPeriodRange(
         startDate: period.startDate,
@@ -1095,19 +824,6 @@ class FinanceRepository {
     }
   }
 
-  Future<Account> _getAccount(DatabaseExecutor db, int id) async {
-    final rows = await db.query(
-      'accounts',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (rows.isEmpty) {
-      throw StateError('계좌를 찾을 수 없습니다.');
-    }
-    return Account.fromMap(rows.first);
-  }
-
   Future<TransactionRecord> _getTransaction(DatabaseExecutor db, int id) async {
     final rows = await db.rawQuery(
       '$_transactionSelect WHERE t.id = ? LIMIT 1',
@@ -1166,14 +882,12 @@ class FinanceRepository {
 
   static const _transactionSelect = '''
     SELECT t.id, t.type, t.occurred_at, t.amount, t.category_id,
-      t.payment_method_id, t.account_id, t.memo, t.refunded_expense_id,
+      t.payment_method_id, t.memo, t.refunded_expense_id,
       t.deleted_at, c.name AS category_name,
       c.color_hex AS category_color_hex,
-      pm.name AS payment_method_name,
-      a.name AS account_name
+      pm.name AS payment_method_name
     FROM transactions t
     LEFT JOIN categories c ON c.id = t.category_id
     LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
-    JOIN accounts a ON a.id = t.account_id
   ''';
 }

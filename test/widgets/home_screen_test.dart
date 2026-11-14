@@ -24,7 +24,6 @@ void main() {
     final now = DateTime.now();
     final month = DateTime(now.year, now.month);
     final summary = HomeSummary(
-      totalBalance: const Money(999999),
       monthlyExpense: const Money(35000),
       month: month,
       budgetUsages: const [
@@ -47,8 +46,6 @@ void main() {
           occurredAt: DateTime(month.year, month.month, 2),
           amount: 30000,
           memo: '장보기',
-          accountId: 1,
-          accountName: '현금',
           categoryId: 1,
           categoryName: '식비',
         ),
@@ -58,8 +55,6 @@ void main() {
           occurredAt: DateTime(month.year, month.month, 1),
           amount: 5000,
           memo: '버스',
-          accountId: 1,
-          accountName: '현금',
           categoryId: 2,
           categoryName: '교통',
         ),

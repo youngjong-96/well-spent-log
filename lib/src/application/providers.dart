@@ -7,7 +7,6 @@ import '../data/services/backup_service.dart';
 import '../data/services/lock_service.dart';
 import '../data/services/notification_service.dart';
 import '../data/settings/settings_store.dart';
-import '../domain/models/account.dart';
 import '../domain/models/category.dart';
 import '../domain/models/expense_template.dart';
 import '../domain/models/home_summary.dart';
@@ -24,6 +23,30 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
 final settingsStoreProvider = Provider<SettingsStore>((ref) {
   return SettingsStore();
 });
+
+final weeklyTotalsVisibleProvider =
+    AsyncNotifierProvider<WeeklyTotalsVisibleController, bool>(
+      WeeklyTotalsVisibleController.new,
+    );
+
+class WeeklyTotalsVisibleController extends AsyncNotifier<bool> {
+  @override
+  Future<bool> build() {
+    return ref.watch(settingsStoreProvider).getWeeklyTotalsVisible();
+  }
+
+  Future<void> setVisible(bool visible) async {
+    final previous = state;
+    state = const AsyncLoading<bool>().copyWithPrevious(previous);
+    try {
+      await ref.read(settingsStoreProvider).setWeeklyTotalsVisible(visible);
+      state = AsyncData(visible);
+    } catch (_) {
+      state = previous;
+      rethrow;
+    }
+  }
+}
 
 final themeModeProvider = NotifierProvider<ThemeModeController, ThemeMode>(
   ThemeModeController.new,
@@ -92,11 +115,6 @@ final homeSummaryProvider = FutureProvider<HomeSummary>((ref) async {
 final categoriesProvider = FutureProvider<List<SpendingCategory>>((ref) async {
   ref.watch(dataRevisionProvider);
   return ref.watch(financeRepositoryProvider).listCategories();
-});
-
-final accountsProvider = FutureProvider<List<Account>>((ref) async {
-  ref.watch(dataRevisionProvider);
-  return ref.watch(financeRepositoryProvider).listAccounts();
 });
 
 final paymentMethodsProvider = FutureProvider<List<PaymentMethod>>((ref) async {

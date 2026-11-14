@@ -138,9 +138,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
         ),
       ),
       data: (records) {
-        final expenseRecords = records
-            .where((record) => record.type != RecordType.income)
-            .toList();
+        final expenseRecords = records.toList();
         final categories = <int, String>{
           for (final record in expenseRecords)
             if (record.categoryId != null && record.categoryName != null)
@@ -536,7 +534,7 @@ class _ListControls extends StatelessWidget {
 }
 
 String _paymentName(TransactionRecord record) {
-  return record.paymentMethodName ?? record.accountName;
+  return record.paymentMethodName ?? '';
 }
 
 int _compareTransactions(

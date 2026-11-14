@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -47,6 +49,41 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+// Flutter depfiles contain absolute output paths. After removing a Windows
+// SUBST drive, Gradle 9 may recurse past the missing drive root and crash while
+// creating output parents, before the Flutter task action can run.
+tasks.matching { it.name.startsWith("compileFlutterBuild") }.configureEach {
+    val variant = name.removePrefix("compileFlutterBuild")
+        .replaceFirstChar { it.lowercaseChar() }
+    val intermediate = layout.buildDirectory.dir("intermediates/flutter/$variant").get().asFile
+    val depfile = intermediate.resolve("flutter_build.d")
+    if (System.getProperty("os.name").startsWith("Windows") && depfile.isFile) {
+        val missingDrives = Regex("""\b[A-Za-z]:[\\/]""")
+            .findAll(depfile.readText())
+            .map { it.value.take(2) + "\\" }
+            .distinct()
+            .filterNot { File(it).exists() }
+            .toList()
+        if (missingDrives.isNotEmpty()) {
+            logger.lifecycle("Resetting Flutter build cache referencing unavailable drives: $missingDrives")
+            val projectRoot = rootProject.projectDir.parentFile.canonicalFile.toPath()
+            val generatedCaches = listOf(
+                intermediate,
+                rootProject.projectDir.parentFile.resolve(".dart_tool/flutter_build"),
+            )
+            generatedCaches.forEach { cache ->
+                val target = cache.canonicalFile.toPath()
+                check(target != projectRoot && target.startsWith(projectRoot)) {
+                    "Refusing to reset a build cache outside the project: $target"
+                }
+                check(!cache.exists() || cache.deleteRecursively()) {
+                    "Could not reset $cache. Close other builds and retry."
+                }
+            }
+        }
+    }
 }
 
 // A stale Flutter build cache can report success while omitting bundle files.

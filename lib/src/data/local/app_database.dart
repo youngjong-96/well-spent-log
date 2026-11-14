@@ -1,5 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+
+import 'spending_data.dart';
 
 class AppDatabase {
   AppDatabase({DatabaseFactory? factory, String? databasePath})
@@ -21,7 +26,7 @@ class AppDatabase {
     return _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -39,6 +44,44 @@ class AppDatabase {
                 ELSE '#D8E8F5'
               END
             ''');
+          }
+          if (oldVersion < 3) {
+            final snapshot = <String, Object?>{
+              'schemaVersion': 1,
+              'exportedAt': DateTime.now().toIso8601String(),
+            };
+            for (final table in legacyTables) {
+              snapshot[table] = await db.query(table);
+            }
+            // Keep the complete old data outside SQLite before removing fields.
+            // Failure to write the backup aborts the upgrade transaction.
+            if (path != inMemoryDatabasePath) {
+              final backup = File('$path.pre-v3.json');
+              if (!await backup.exists()) {
+                final temporary = File('${backup.path}.tmp');
+                await temporary.writeAsString(
+                  jsonEncode(snapshot),
+                  flush: true,
+                );
+                await temporary.rename(backup.path);
+              }
+            }
+            final converted = convertLegacyData(snapshot);
+            await db.execute('PRAGMA defer_foreign_keys = ON');
+            // Self references must be cleared before dropping the old table.
+            await db.update('transactions', {'refunded_expense_id': null});
+            for (final table in legacyTables.reversed) {
+              await db.execute('DROP TABLE $table');
+            }
+            await _createSchema(db);
+            for (final table in spendingTables) {
+              for (final row in converted[table]!) {
+                await db.insert(table, row);
+              }
+            }
+            if ((await db.rawQuery('PRAGMA foreign_key_check')).isNotEmpty) {
+              throw const FormatException('기존 지출 데이터의 연결 정보를 확인해 주세요.');
+            }
           }
         },
       ),
@@ -58,31 +101,12 @@ class AppDatabase {
       )
     ''');
     await db.execute('''
-      CREATE TABLE accounts (
+      CREATE TABLE payment_methods (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL,
-        name TEXT NOT NULL,
-        bank_name TEXT,
-        account_number TEXT,
-        balance INTEGER NOT NULL DEFAULT 0,
-        include_in_total INTEGER NOT NULL DEFAULT 1,
+        name TEXT NOT NULL CHECK(length(trim(name)) > 0),
         is_active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE payment_methods (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL,
-        name TEXT NOT NULL,
-        card_company TEXT,
-        billing_day INTEGER,
-        account_id INTEGER NOT NULL,
-        is_active INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (account_id) REFERENCES accounts(id)
       )
     ''');
     await db.execute('''
@@ -111,12 +135,11 @@ class AppDatabase {
     await db.execute('''
       CREATE TABLE transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('expense', 'refund')),
         occurred_at TEXT NOT NULL,
-        amount INTEGER NOT NULL,
-        category_id INTEGER,
-        payment_method_id INTEGER,
-        account_id INTEGER NOT NULL,
+        amount INTEGER NOT NULL CHECK(amount > 0),
+        category_id INTEGER NOT NULL,
+        payment_method_id INTEGER NOT NULL,
         memo TEXT NOT NULL DEFAULT '',
         refunded_expense_id INTEGER,
         created_at TEXT NOT NULL,
@@ -124,20 +147,7 @@ class AppDatabase {
         deleted_at TEXT,
         FOREIGN KEY (category_id) REFERENCES categories(id),
         FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id),
-        FOREIGN KEY (account_id) REFERENCES accounts(id),
         FOREIGN KEY (refunded_expense_id) REFERENCES transactions(id)
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE account_ledger (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account_id INTEGER NOT NULL,
-        source_type TEXT NOT NULL,
-        source_id INTEGER,
-        delta INTEGER NOT NULL,
-        balance_after INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY (account_id) REFERENCES accounts(id)
       )
     ''');
     await db.execute('''
@@ -196,19 +206,8 @@ class AppDatabase {
         'updated_at': now,
       });
     }
-    final cashAccountId = await db.insert('accounts', {
-      'type': 'cash',
-      'name': '현금',
-      'balance': 0,
-      'include_in_total': 1,
-      'is_active': 1,
-      'created_at': now,
-      'updated_at': now,
-    });
     await db.insert('payment_methods', {
-      'type': 'cash',
       'name': '현금',
-      'account_id': cashAccountId,
       'is_active': 1,
       'created_at': now,
       'updated_at': now,

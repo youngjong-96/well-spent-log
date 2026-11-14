@@ -2,23 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers.dart';
-import '../../domain/models/account.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/expense_template.dart';
 import '../../domain/models/payment_method.dart';
 import '../../domain/models/transaction_draft.dart';
 import '../../domain/models/transaction_record.dart';
-import '../../domain/models/transaction_type.dart';
 import '../../shared/formatters.dart';
 
 class TransactionFormSheet extends ConsumerStatefulWidget {
-  const TransactionFormSheet({
-    required this.transactionType,
-    this.record,
-    super.key,
-  });
+  const TransactionFormSheet({this.record, super.key});
 
-  final TransactionType transactionType;
   final TransactionRecord? record;
 
   static Future<int?> edit(
@@ -31,12 +24,7 @@ class TransactionFormSheet extends ConsumerStatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => TransactionFormSheet(
-        transactionType: record.type == RecordType.income
-            ? TransactionType.income
-            : TransactionType.expense,
-        record: record,
-      ),
+      builder: (_) => TransactionFormSheet(record: record),
     );
     if (context.mounted && transactionId != null) {
       messenger
@@ -74,7 +62,6 @@ class TransactionFormSheet extends ConsumerStatefulWidget {
               amount: record.amount,
               categoryId: record.categoryId,
               paymentMethodId: record.paymentMethodId,
-              accountId: record.accountId,
               memo: record.memo,
               refundedExpenseId: record.refundedExpenseId,
             ),
@@ -112,20 +99,44 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
+  final _amountFocus = FocusNode();
+  final _categoryFocus = FocusNode();
+  final _paymentFocus = FocusNode();
+  final _refundFocus = FocusNode();
+  final _dateFocus = FocusNode();
+  final _memoFocus = FocusNode();
   late Future<_FormOptions> _optionsFuture;
   DateTime _date = DateTime.now();
   int? _categoryId;
   int? _paymentMethodId;
-  int? _accountId;
   int? _refundedExpenseId;
   bool _isRefund = false;
   bool _saving = false;
+  int _refundChoiceCount = 0;
+  FocusNode? _lastFocusedField;
 
-  bool get _isExpense => widget.transactionType == TransactionType.expense;
+  List<FocusNode> get _fieldOrder => [
+    _amountFocus,
+    _categoryFocus,
+    _paymentFocus,
+    if (_isRefund && _refundChoiceCount > 0) _refundFocus,
+    _dateFocus,
+    _memoFocus,
+  ];
 
   @override
   void initState() {
     super.initState();
+    for (final node in [
+      _amountFocus,
+      _categoryFocus,
+      _paymentFocus,
+      _refundFocus,
+      _dateFocus,
+      _memoFocus,
+    ]) {
+      node.addListener(_onFieldFocusChanged);
+    }
     final record = widget.record;
     if (record != null) {
       _amountController.text = formatAmount(record.amount);
@@ -133,7 +144,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
       _date = record.occurredAt;
       _categoryId = record.categoryId;
       _paymentMethodId = record.paymentMethodId;
-      _accountId = record.accountId;
       _isRefund = record.type == RecordType.refund;
       _refundedExpenseId = record.refundedExpenseId;
     }
@@ -142,6 +152,17 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
 
   @override
   void dispose() {
+    for (final node in [
+      _amountFocus,
+      _categoryFocus,
+      _paymentFocus,
+      _refundFocus,
+      _dateFocus,
+      _memoFocus,
+    ]) {
+      node.removeListener(_onFieldFocusChanged);
+      node.dispose();
+    }
     _amountController.dispose();
     _memoController.dispose();
     super.dispose();
@@ -150,9 +171,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   Future<_FormOptions> _loadOptions() async {
     final repository = ref.read(financeRepositoryProvider);
     final categories = await repository.listCategories(
-      includeInactive: widget.record != null,
-    );
-    final accounts = await repository.listAccounts(
       includeInactive: widget.record != null,
     );
     final methods = await repository.listPaymentMethods(
@@ -176,19 +194,16 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
     final lastSelection = await repository.getLastExpenseSelection();
     if (widget.record != null) {
       // Keep the original selections, including archived options.
-    } else if (_isExpense) {
+    } else {
       _categoryId = categories.any((item) => item.id == lastSelection.$1)
           ? lastSelection.$1
           : categories.firstOrNull?.id;
       _paymentMethodId = methods.any((item) => item.id == lastSelection.$2)
           ? lastSelection.$2
           : methods.firstOrNull?.id;
-    } else {
-      _accountId = accounts.firstOrNull?.id;
     }
     return _FormOptions(
       categories: categories,
-      accounts: accounts,
       methods: methods,
       templates: templates,
       recentExpenses: recentExpenses,
@@ -237,6 +252,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
               );
             }
             final options = snapshot.data!;
+            _refundChoiceCount = options.recentExpenses.length;
             return DraggableScrollableSheet(
               expand: false,
               initialChildSize: 0.92,
@@ -248,17 +264,17 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                   child: Column(
                     children: [
                       Expanded(
-                        child: ListView(
+                        child: SingleChildScrollView(
                           controller: scrollController,
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                          children: [
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
                             Row(
                               children: [
                                 Expanded(
                                   child: Text(
-                                    widget.record != null
-                                        ? (_isExpense ? '지출 수정' : '수입 수정')
-                                        : (_isExpense ? '지출 추가' : '수입 추가'),
+                                    widget.record != null ? '지출 수정' : '지출 추가',
                                     style: Theme.of(
                                       context,
                                     ).textTheme.headlineMedium,
@@ -272,7 +288,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ],
                             ),
                             if (widget.record == null &&
-                                _isExpense &&
                                 (options.templates.isNotEmpty ||
                                     options.recentExpenses.isNotEmpty)) ...[
                               const SizedBox(height: 12),
@@ -326,11 +341,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                             const SizedBox(height: 20),
                             TextFormField(
                               controller: _amountController,
+                              focusNode: _amountFocus,
                               autofocus: true,
                               keyboardType: TextInputType.number,
                               inputFormatters: [const AmountInputFormatter()],
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => _dismissKeyboard(),
+                              textInputAction: TextInputAction.next,
+                              onFieldSubmitted: (_) => _focusNextField(),
                               onTapOutside: (_) => _dismissKeyboard(),
                               style: Theme.of(context).textTheme.headlineLarge
                                   ?.copyWith(fontWeight: FontWeight.w700),
@@ -361,7 +377,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ],
                             ),
                             const SizedBox(height: 16),
-                            if (_isExpense) ...[
+                            ...[
                               SegmentedButton<bool>(
                                 segments: const [
                                   ButtonSegment(
@@ -382,6 +398,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ),
                               const SizedBox(height: 16),
                               DropdownButtonFormField<int>(
+                                focusNode: _categoryFocus,
                                 initialValue: _categoryId,
                                 decoration: const InputDecoration(
                                   labelText: '카테고리',
@@ -402,6 +419,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ),
                               const SizedBox(height: 12),
                               DropdownButtonFormField<int>(
+                                focusNode: _paymentFocus,
                                 initialValue: _paymentMethodId,
                                 decoration: const InputDecoration(
                                   labelText: '결제수단',
@@ -423,6 +441,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               if (_isRefund) ...[
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<int>(
+                                  focusNode: _refundFocus,
                                   initialValue:
                                       options.recentExpenses.any(
                                         (r) => r.id == _refundedExpenseId,
@@ -449,47 +468,37 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                                   },
                                 ),
                               ],
-                            ] else
-                              DropdownButtonFormField<int>(
-                                initialValue: _accountId,
-                                decoration: const InputDecoration(
-                                  labelText: '입금 계좌',
-                                  prefixIcon: Icon(
-                                    Icons.account_balance_outlined,
-                                  ),
-                                ),
-                                items: [
-                                  for (final account in options.accounts)
-                                    DropdownMenuItem(
-                                      value: account.id,
-                                      child: Text(account.name),
-                                    ),
-                                ],
-                                onTap: _dismissKeyboard,
-                                onChanged: (value) =>
-                                    setState(() => _accountId = value),
-                                validator: (value) =>
-                                    value == null ? '입금 계좌를 선택해 주세요.' : null,
-                              ),
+                            ],
                             const SizedBox(height: 12),
-                            ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
+                            Focus(
+                              focusNode: _dateFocus,
+                              child: ListenableBuilder(
+                                listenable: _dateFocus,
+                                builder: (context, _) {
+                                  final focused = _dateFocus.hasFocus;
+                                  final scheme = Theme.of(context).colorScheme;
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(
+                                        color: focused
+                                            ? scheme.primary
+                                            : scheme.outlineVariant,
+                                        width: focused ? 1.5 : 1,
+                                      ),
+                                    ),
+                                    leading: const Icon(
+                                      Icons.calendar_today_outlined,
+                                    ),
+                                    title: const Text('날짜'),
+                                    trailing: Text(formatShortDate(_date)),
+                                    onTap: _pickDate,
+                                  );
+                                },
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                side: BorderSide(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.outlineVariant,
-                                ),
-                              ),
-                              leading: const Icon(
-                                Icons.calendar_today_outlined,
-                              ),
-                              title: const Text('날짜'),
-                              trailing: Text(formatShortDate(_date)),
-                              onTap: _pickDate,
                             ),
                             const SizedBox(height: 8),
                             Row(
@@ -514,7 +523,10 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _memoController,
+                              focusNode: _memoFocus,
                               maxLength: 80,
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (_) => _dismissKeyboard(),
                               onTapOutside: (_) => _dismissKeyboard(),
                               decoration: const InputDecoration(
                                 labelText: '메모 (선택)',
@@ -525,11 +537,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: Text(
-                                  '입력한 금액은 지출에서 차감되고 계좌 잔액에 더해집니다.',
+                                  '입력한 금액만큼 지출이 줄고 남은 예산이 늘어납니다.',
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                       DecoratedBox(
@@ -545,19 +558,47 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                         ),
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: _saving ? null : () => _save(options),
-                              icon: _saving
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
+                          child: TextFieldTapRegion(
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _canFocusNextField
+                                        ? _focusNextField
+                                        : null,
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(0, 48),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(
+                                          12,
+                                        ),
                                       ),
-                                    )
-                                  : const Icon(Icons.check),
-                              label: Text(_saving ? '저장 중' : '저장'),
+                                    ),
+                                    icon: const Icon(Icons.arrow_downward),
+                                    label: const Text('다음'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: _saving
+                                        ? null
+                                        : () => _save(options),
+                                    style: FilledButton.styleFrom(
+                                      minimumSize: const Size(0, 48),
+                                    ),
+                                    icon: _saving
+                                        ? const SizedBox.square(
+                                            dimension: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.check),
+                                    label: Text(_saving ? '저장 중' : '저장'),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -624,37 +665,70 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
     FocusManager.instance.primaryFocus?.unfocus();
   }
 
+  void _onFieldFocusChanged() {
+    for (final node in _fieldOrder) {
+      if (node.hasFocus) {
+        _lastFocusedField = node;
+        break;
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  // Index of the field that "다음" should advance from.
+  // A tap outside the field can clear focus before the button runs. The last
+  // field that actually had focus is used so the button keeps moving forward.
+  int _anchorIndex(List<FocusNode> order) {
+    final current = order.indexWhere((node) => node.hasFocus);
+    if (current >= 0) return current;
+    final last = _lastFocusedField;
+    if (last == null) return -1;
+    final stored = order.indexOf(last);
+    if (stored >= 0) return stored;
+    if (last == _refundFocus) {
+      return order.indexOf(_dateFocus) - 1;
+    }
+    return -1;
+  }
+
+  bool get _canFocusNextField {
+    if (_saving) return false;
+    final order = _fieldOrder;
+    return _anchorIndex(order) < order.length - 1;
+  }
+
+  void _focusNextField() {
+    final order = _fieldOrder;
+    final nextIndex = _anchorIndex(order) + 1;
+    if (nextIndex < 0 || nextIndex >= order.length) return;
+    final target = order[nextIndex];
+    target.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final fieldContext = target.context;
+      if (fieldContext == null || !fieldContext.mounted) return;
+      Scrollable.ensureVisible(
+        fieldContext,
+        alignment: 0.25,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   Future<void> _save(_FormOptions options) async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
     final amount = parseAmount(_amountController.text)!;
-    final paymentMethod = _isExpense
-        ? options.methods
-              .where((item) => item.id == _paymentMethodId)
-              .firstOrNull
-        : null;
-    final accountId = _isExpense ? paymentMethod?.accountId : _accountId;
-    if (accountId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('계좌 정보를 확인하지 못했어요. 결제수단이나 계좌를 다시 선택해 주세요.'),
-        ),
-      );
-      return;
-    }
     setState(() => _saving = true);
     try {
       final repository = ref.read(financeRepositoryProvider);
       final draft = TransactionDraft(
-        type: _isExpense
-            ? (_isRefund ? RecordType.refund : RecordType.expense)
-            : RecordType.income,
+        type: _isRefund ? RecordType.refund : RecordType.expense,
         occurredAt: _date,
         amount: amount,
-        categoryId: _isExpense ? _categoryId : null,
-        paymentMethodId: _isExpense ? _paymentMethodId : null,
-        accountId: accountId,
+        categoryId: _categoryId,
+        paymentMethodId: _paymentMethodId,
         memo: _memoController.text,
         refundedExpenseId: _isRefund ? _refundedExpenseId : null,
       );
@@ -690,14 +764,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
 class _FormOptions {
   const _FormOptions({
     required this.categories,
-    required this.accounts,
     required this.methods,
     required this.templates,
     required this.recentExpenses,
   });
 
   final List<SpendingCategory> categories;
-  final List<Account> accounts;
   final List<PaymentMethod> methods;
   final List<ExpenseTemplate> templates;
   final List<TransactionRecord> recentExpenses;
