@@ -249,7 +249,10 @@ void main() {
 
     final saveButton = find.widgetWithText(FilledButton, '저장');
     expect(
-      find.descendant(of: find.byType(ListView), matching: saveButton),
+      find.descendant(
+        of: find.byType(SingleChildScrollView),
+        matching: saveButton,
+      ),
       findsNothing,
     );
     await tester.ensureVisible(saveButton);
@@ -263,6 +266,168 @@ void main() {
     expect(find.text('저장 취소'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('다음 버튼이 입력 순서대로 포커스를 옮긴다', (tester) async {
+    final repository = _FakeSpendingRepository();
+    addTearDown(repository.dispose);
+    await _openExpenseForm(tester, repository: repository, theme: AppTheme.light);
+
+    final next = find.widgetWithText(OutlinedButton, '다음');
+    expect(next, findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '저장'), findsOneWidget);
+    expect(tester.widget<OutlinedButton>(next).onPressed, isNotNull);
+    expect(_textField('금액', tester).focusNode!.hasFocus, isTrue);
+
+    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pumpAndSettle();
+    expect(_dropdownFocus('카테고리', tester).hasFocus, isTrue);
+
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(_dropdownFocus('결제수단', tester).hasFocus, isTrue);
+
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(
+      Focus.of(tester.element(find.widgetWithText(ListTile, '날짜'))).hasFocus,
+      isTrue,
+    );
+
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(_textField('메모 (선택)', tester).focusNode!.hasFocus, isTrue);
+    expect(tester.widget<OutlinedButton>(next).onPressed, isNull);
+
+    final amountField = find.byWidgetPredicate(
+      (widget) => widget is TextField && widget.decoration?.labelText == '금액',
+    );
+    await tester.scrollUntilVisible(
+      amountField,
+      -400,
+      scrollable: find.byType(Scrollable).first,
+    );
+    _textField('금액', tester).focusNode!.requestFocus();
+    await tester.pumpAndSettle();
+    expect(tester.widget<OutlinedButton>(next).onPressed, isNotNull);
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(_dropdownFocus('카테고리', tester).hasFocus, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('환불 입력에서는 다음 버튼이 원 지출 연결로 이동한다', (tester) async {
+    final repository = _FakeSpendingRepository()
+      ..transactions = [
+        TransactionRecord(
+          id: 7,
+          type: RecordType.expense,
+          occurredAt: DateTime(2026, 11, 1),
+          amount: 3000,
+          memo: '커피',
+          categoryId: 1,
+          categoryName: '식비',
+          paymentMethodId: 1,
+        ),
+      ];
+    addTearDown(repository.dispose);
+    await _openExpenseForm(tester, repository: repository, theme: AppTheme.dark);
+
+    await tester.tap(find.text('환불/취소'));
+    await tester.pumpAndSettle();
+    final next = find.widgetWithText(OutlinedButton, '다음');
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(_dropdownFocus('원 지출 연결 (선택)', tester).hasFocus, isTrue);
+
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(
+      Focus.of(tester.element(find.widgetWithText(ListTile, '날짜'))).hasFocus,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('좁은 화면과 큰 글자에서도 다음과 저장이 겹치지 않는다', (tester) async {
+    final repository = _FakeSpendingRepository();
+    addTearDown(repository.dispose);
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _openExpenseForm(
+      tester,
+      repository: repository,
+      theme: AppTheme.dark,
+      textScale: 2,
+    );
+
+    expect(find.widgetWithText(OutlinedButton, '다음'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '저장'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+Future<void> _openExpenseForm(
+  WidgetTester tester, {
+  required FinanceRepository repository,
+  required ThemeData theme,
+  double textScale = 1,
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [financeRepositoryProvider.overrideWithValue(repository)],
+      child: MaterialApp(
+        theme: theme,
+        builder: (context, child) {
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(textScale),
+            ),
+            child: child!,
+          );
+        },
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showModalBottomSheet<int>(
+                context: context,
+                isScrollControlled: true,
+                useSafeArea: true,
+                builder: (_) => const TransactionFormSheet(),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('open'));
+  await tester.pumpAndSettle();
+}
+
+TextField _textField(String label, WidgetTester tester) {
+  return tester.widget<TextField>(
+    find.byWidgetPredicate(
+      (widget) => widget is TextField && widget.decoration?.labelText == label,
+    ),
+  );
+}
+
+FocusNode _dropdownFocus(String label, WidgetTester tester) {
+  final field = find.byWidgetPredicate(
+    (widget) =>
+        widget is DropdownButtonFormField<int> &&
+        widget.decoration.labelText == label,
+  );
+  return tester
+      .widget<DropdownButton<int>>(
+        find.descendant(of: field, matching: find.byType(DropdownButton<int>)),
+      )
+      .focusNode!;
 }
 
 class _UnlockedLockService extends LockService {
@@ -297,6 +462,7 @@ class _FakeSpendingRepository extends FinanceRepository {
   }
 
   final savedTransactions = <TransactionDraft>[];
+  List<TransactionRecord> transactions = const [];
   final _methods = <PaymentMethod>[
     const PaymentMethod(id: 1, name: '현금', isActive: true),
   ];
@@ -357,7 +523,7 @@ class _FakeSpendingRepository extends FinanceRepository {
     bool includeDeleted = false,
     int? limit,
   }) async {
-    return const [];
+    return transactions;
   }
 
   @override
