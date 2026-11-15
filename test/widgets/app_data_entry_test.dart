@@ -104,6 +104,15 @@ void main() {
     );
     expect(find.text('lunch'), findsOneWidget);
     await tester.enterText(find.byType(TextFormField).first, '7000');
+    await tester.tap(find.widgetWithText(OutlinedButton, '메모 입력'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('데이트비용 · 현금 · ${formatShortDate(record.occurredAt)}'),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(OutlinedButton, '분류·결제 확인'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(OutlinedButton, '메모 입력'), findsNothing);
     final save = find.byType(FilledButton);
     await tester.ensureVisible(save);
     await tester.tap(save);
@@ -237,6 +246,13 @@ void main() {
           widget is DropdownButtonFormField<int> &&
           widget.decoration.labelText == '카테고리',
     );
+    await tester.tap(find.widgetWithText(OutlinedButton, '메모 입력'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.widgetWithText(OutlinedButton, '분류·결제 확인'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(categoryField);
     await tester.pump();
     expect(tester.testTextInput.isVisible, isFalse);
@@ -267,7 +283,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('다음 버튼이 입력 순서대로 포커스를 옮긴다', (tester) async {
+  testWidgets('단계 안내로 메모와 확인을 오가고 언제든 저장한다', (tester) async {
     final repository = _FakeSpendingRepository();
     addTearDown(repository.dispose);
     await _openExpenseForm(
@@ -275,55 +291,30 @@ void main() {
       repository: repository,
       theme: AppTheme.light,
     );
-
-    final next = find.widgetWithText(OutlinedButton, '다음');
-    expect(next, findsOneWidget);
-    expect(find.widgetWithText(FilledButton, '저장'), findsOneWidget);
-    expect(tester.widget<OutlinedButton>(next).onPressed, isNotNull);
-    expect(_textField('금액', tester).focusNode!.hasFocus, isTrue);
-
-    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.enterText(find.byType(TextFormField).first, '5000');
+    await tester.tap(find.widgetWithText(OutlinedButton, '메모 입력'));
     await tester.pumpAndSettle();
     expect(_textField('어떤 지출인가요?', tester).focusNode!.hasFocus, isTrue);
-
-    await tester.tap(next);
+    expect(find.text('식비 · 현금 · 오늘'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, '분류·결제 확인'));
     await tester.pumpAndSettle();
-    expect(_dropdownFocus('카테고리', tester).hasFocus, isTrue);
-
-    await tester.tap(next);
-    await tester.pumpAndSettle();
-    expect(_dropdownFocus('결제수단', tester).hasFocus, isTrue);
-
-    await tester.tap(next);
-    await tester.pumpAndSettle();
-    expect(
-      Focus.of(tester.element(find.widgetWithText(ListTile, '날짜'))).hasFocus,
-      isTrue,
-    );
-
-    expect(tester.widget<OutlinedButton>(next).onPressed, isNull);
-
-    final amountField = find.byWidgetPredicate(
-      (widget) => widget is TextField && widget.decoration?.labelText == '금액',
-    );
-    await tester.scrollUntilVisible(
-      amountField,
-      -400,
-      scrollable: find.byType(Scrollable).first,
-    );
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(find.widgetWithText(OutlinedButton, '메모 입력'), findsNothing);
+    final save = find.widgetWithText(FilledButton, '저장');
+    expect(tester.getSize(save).width, greaterThan(500));
     _textField('금액', tester).focusNode!.requestFocus();
     await tester.pumpAndSettle();
-    expect(tester.widget<OutlinedButton>(next).onPressed, isNotNull);
-    await tester.tap(next);
+    expect(find.widgetWithText(OutlinedButton, '메모 입력'), findsOneWidget);
+    await tester.testTextInput.receiveAction(TextInputAction.next);
     await tester.pumpAndSettle();
-    expect(_textField('어떤 지출인가요?', tester).focusNode!.hasFocus, isTrue);
-
-    await tester.tap(next);
+    expect(find.widgetWithText(OutlinedButton, '분류·결제 확인'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('transaction-summary')));
     await tester.pumpAndSettle();
-    expect(_dropdownFocus('카테고리', tester).hasFocus, isTrue);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(repository.savedTransactions.single.amount, 5000);
     expect(tester.takeException(), isNull);
   });
-
   testWidgets('메모는 펼쳐진 선택 입력이며 완료로 저장하지 않는다', (tester) async {
     final repository = _FakeSpendingRepository();
     addTearDown(repository.dispose);
@@ -356,7 +347,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.savedTransactions.single.memo, isEmpty);
   });
-  testWidgets('환불 입력에서는 다음 버튼이 원 지출 연결로 이동한다', (tester) async {
+  testWidgets('키보드 위에서 입력 필드와 요약이 보이고 메모 단계에서도 저장한다', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 850);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetViewInsets);
+    final repository = _FakeSpendingRepository();
+    addTearDown(repository.dispose);
+    await _openExpenseForm(
+      tester,
+      repository: repository,
+      theme: AppTheme.dark,
+    );
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pumpAndSettle();
+    final save = find.widgetWithText(FilledButton, '저장');
+    final amount = find.byType(TextFormField).first;
+    expect(tester.getBottomRight(save).dy, lessThanOrEqualTo(530));
+    expect(
+      tester.getBottomRight(amount).dy,
+      lessThan(tester.getTopLeft(save).dy),
+    );
+    await tester.enterText(amount, '5000');
+    await tester.tap(find.widgetWithText(OutlinedButton, '메모 입력'));
+    await tester.pumpAndSettle();
+    final memo = find.byType(TextFormField).at(1);
+    final summary = find.byKey(const ValueKey('transaction-summary'));
+    expect(tester.getTopLeft(memo).dy, greaterThanOrEqualTo(0));
+    expect(
+      tester.getBottomRight(summary).dy,
+      lessThan(tester.getTopLeft(save).dy),
+    );
+    await tester.tap(find.widgetWithText(OutlinedButton, '+1,000'));
+    await tester.pumpAndSettle();
+    expect(_textField('어떤 지출인가요?', tester).focusNode!.hasFocus, isTrue);
+    await tester.enterText(memo, '커피');
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(repository.savedTransactions.single.amount, 6000);
+    expect(repository.savedTransactions.single.memo, '커피');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('환불 확인 단계에서도 원 지출 연결을 유지한다', (tester) async {
     final repository = _FakeSpendingRepository()
       ..transactions = [
         TransactionRecord(
@@ -377,29 +411,25 @@ void main() {
       theme: AppTheme.dark,
     );
 
+    await tester.tap(find.widgetWithText(OutlinedButton, '메모 입력'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, '분류·결제 확인'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('환불/취소'));
     await tester.pumpAndSettle();
-    final next = find.widgetWithText(OutlinedButton, '다음');
-    await tester.tap(next);
-    await tester.pumpAndSettle();
-    await tester.tap(next);
-    await tester.pumpAndSettle();
-    await tester.tap(next);
-    await tester.pumpAndSettle();
-    await tester.tap(next);
-    await tester.pumpAndSettle();
-    expect(_dropdownFocus('원 지출 연결 (선택)', tester).hasFocus, isTrue);
-
-    await tester.tap(next);
-    await tester.pumpAndSettle();
     expect(
-      Focus.of(tester.element(find.widgetWithText(ListTile, '날짜'))).hasFocus,
-      isTrue,
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is DropdownButtonFormField<int> &&
+            widget.decoration.labelText == '원 지출 연결 (선택)',
+      ),
+      findsOneWidget,
     );
+    expect(find.widgetWithText(FilledButton, '저장'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('좁은 화면과 큰 글자에서도 다음과 저장이 겹치지 않는다', (tester) async {
+  testWidgets('좁은 화면과 큰 글자에서도 단계 안내와 저장이 겹치지 않는다', (tester) async {
     final repository = _FakeSpendingRepository();
     addTearDown(repository.dispose);
     await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -411,7 +441,7 @@ void main() {
       textScale: 2,
     );
 
-    expect(find.widgetWithText(OutlinedButton, '다음'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '메모 입력'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, '저장'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -462,19 +492,6 @@ TextField _textField(String label, WidgetTester tester) {
       (widget) => widget is TextField && widget.decoration?.labelText == label,
     ),
   );
-}
-
-FocusNode _dropdownFocus(String label, WidgetTester tester) {
-  final field = find.byWidgetPredicate(
-    (widget) =>
-        widget is DropdownButtonFormField<int> &&
-        widget.decoration.labelText == label,
-  );
-  return tester
-      .widget<DropdownButton<int>>(
-        find.descendant(of: field, matching: find.byType(DropdownButton<int>)),
-      )
-      .focusNode!;
 }
 
 class _UnlockedLockService extends LockService {

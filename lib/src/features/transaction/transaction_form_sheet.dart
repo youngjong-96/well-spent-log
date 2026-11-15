@@ -95,7 +95,8 @@ class TransactionFormSheet extends ConsumerStatefulWidget {
       _TransactionFormSheetState();
 }
 
-class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
+class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
+    with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -112,21 +113,17 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
   int? _refundedExpenseId;
   bool _isRefund = false;
   bool _saving = false;
-  int _refundChoiceCount = 0;
-  FocusNode? _lastFocusedField;
-
-  List<FocusNode> get _fieldOrder => [
-    _amountFocus,
-    _memoFocus,
-    _categoryFocus,
-    _paymentFocus,
-    if (_isRefund && _refundChoiceCount > 0) _refundFocus,
-    _dateFocus,
-  ];
+  final _amountKey = GlobalKey();
+  final _memoSectionKey = GlobalKey();
+  final _reviewKey = GlobalKey();
+  bool _reviewing = false;
+  double _keyboardInset = 0;
+  bool get _editingMemo => _memoFocus.hasFocus;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     for (final node in [
       _amountFocus,
       _categoryFocus,
@@ -163,6 +160,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
       node.removeListener(_onFieldFocusChanged);
       node.dispose();
     }
+    WidgetsBinding.instance.removeObserver(this);
     _amountController.dispose();
     _memoController.dispose();
     super.dispose();
@@ -252,7 +250,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
               );
             }
             final options = snapshot.data!;
-            _refundChoiceCount = options.recentExpenses.length;
             return DraggableScrollableSheet(
               expand: false,
               initialChildSize: 0.92,
@@ -344,13 +341,14 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                               ],
                               const SizedBox(height: 20),
                               TextFormField(
+                                key: _amountKey,
                                 controller: _amountController,
                                 focusNode: _amountFocus,
                                 autofocus: true,
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [const AmountInputFormatter()],
                                 textInputAction: TextInputAction.next,
-                                onFieldSubmitted: (_) => _focusNextField(),
+                                onFieldSubmitted: (_) => _focusMemo(),
                                 onTapOutside: (_) => _dismissKeyboard(),
                                 style: Theme.of(context).textTheme.headlineLarge
                                     ?.copyWith(fontWeight: FontWeight.w700),
@@ -367,36 +365,83 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                                 },
                               ),
                               const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _memoController,
-                                focusNode: _memoFocus,
-                                maxLength: 80,
-                                textInputAction: TextInputAction.done,
-                                onFieldSubmitted: (_) => _dismissKeyboard(),
-                                onTapOutside: (_) => _dismissKeyboard(),
-                                decoration: const InputDecoration(
-                                  labelText: '어떤 지출인가요?',
-                                  hintText: '예: 친구와 점심',
-                                  prefixIcon: Icon(Icons.edit_note_outlined),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
+                              Column(
+                                key: _memoSectionKey,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  for (final amount in [1000, 5000, 10000]) ...[
-                                    Expanded(
-                                      child: OutlinedButton(
-                                        onPressed: () => _addAmount(amount),
-                                        child: Text('+${formatAmount(amount)}'),
+                                  TextFormField(
+                                    controller: _memoController,
+                                    focusNode: _memoFocus,
+                                    maxLength: 80,
+                                    textInputAction: TextInputAction.done,
+                                    onFieldSubmitted: (_) => _dismissKeyboard(),
+                                    onTapOutside: (_) => _dismissKeyboard(),
+                                    decoration: const InputDecoration(
+                                      labelText: '어떤 지출인가요?',
+                                      hintText: '예: 친구와 점심',
+                                      prefixIcon: Icon(
+                                        Icons.edit_note_outlined,
                                       ),
                                     ),
-                                    if (amount != 10000)
-                                      const SizedBox(width: 8),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  TextFieldTapRegion(
+                                    child: Row(
+                                      children: [
+                                        for (final amount in [
+                                          1000,
+                                          5000,
+                                          10000,
+                                        ]) ...[
+                                          Expanded(
+                                            child: OutlinedButton(
+                                              onPressed: () =>
+                                                  _addAmount(amount),
+                                              child: Text(
+                                                '+${formatAmount(amount)}',
+                                              ),
+                                            ),
+                                          ),
+                                          if (amount != 10000)
+                                            const SizedBox(width: 8),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  if (_editingMemo) ...[
+                                    const SizedBox(height: 12),
+                                    TextFieldTapRegion(
+                                      child: Material(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: InkWell(
+                                          key: const ValueKey(
+                                            'transaction-summary',
+                                          ),
+                                          onTap: _showReview,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: Text(
+                                              _selectionSummary(options),
+                                              textAlign: TextAlign.center,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ],
                               ),
                               const SizedBox(height: 16),
                               ...[
+                                SizedBox(key: _reviewKey),
                                 SegmentedButton<bool>(
                                   segments: const [
                                     ButtonSegment(
@@ -578,23 +623,34 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                           child: TextFieldTapRegion(
                             child: Row(
                               children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: _canFocusNextField
-                                        ? _focusNextField
-                                        : null,
-                                    style: OutlinedButton.styleFrom(
-                                      minimumSize: const Size(0, 48),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                                if (!_reviewing) ...[
+                                  Expanded(
+                                    flex: 3,
+                                    child: OutlinedButton.icon(
+                                      onPressed: _saving
+                                          ? null
+                                          : (_editingMemo
+                                                ? _showReview
+                                                : _focusMemo),
+                                      style: OutlinedButton.styleFrom(
+                                        minimumSize: const Size(0, 48),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                      ),
+                                      icon: const Icon(Icons.arrow_downward),
+                                      label: Text(
+                                        _editingMemo ? '분류·결제 확인' : '메모 입력',
+                                        textAlign: TextAlign.center,
                                       ),
                                     ),
-                                    icon: const Icon(Icons.arrow_downward),
-                                    label: const Text('다음'),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
+                                  const SizedBox(width: 8),
+                                ],
                                 Expanded(
+                                  flex: 2,
                                   child: FilledButton.icon(
                                     onPressed: _saving
                                         ? null
@@ -678,56 +734,88 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
 
   void _dismissKeyboard() {
     FocusManager.instance.primaryFocus?.unfocus();
+    if (mounted) setState(() => _reviewing = true);
   }
 
   void _onFieldFocusChanged() {
-    for (final node in _fieldOrder) {
-      if (node.hasFocus) {
-        _lastFocusedField = node;
-        break;
-      }
+    if (!mounted) return;
+    if (_amountFocus.hasFocus || _memoFocus.hasFocus) {
+      setState(() => _reviewing = false);
+      _revealEditingField();
+    } else {
+      setState(() {});
     }
-    if (mounted) setState(() {});
   }
 
-  // Index of the field that "다음" should advance from.
-  // A tap outside the field can clear focus before the button runs. The last
-  // field that actually had focus is used so the button keeps moving forward.
-  int _anchorIndex(List<FocusNode> order) {
-    final current = order.indexWhere((node) => node.hasFocus);
-    if (current >= 0) return current;
-    final last = _lastFocusedField;
-    if (last == null) return -1;
-    final stored = order.indexOf(last);
-    if (stored >= 0) return stored;
-    if (last == _refundFocus) {
-      return order.indexOf(_dateFocus) - 1;
+  @override
+  void didChangeMetrics() {
+    final inset = View.of(context).viewInsets.bottom;
+    if (_keyboardInset > 0 && inset == 0 && !_reviewing) {
+      _dismissKeyboard();
+      setState(() => _reviewing = true);
     }
-    return -1;
+    _keyboardInset = inset;
+    if (_reviewing) {
+      _reveal(_reviewKey);
+    } else {
+      _revealEditingField();
+    }
   }
 
-  bool get _canFocusNextField {
-    if (_saving) return false;
-    final order = _fieldOrder;
-    return _anchorIndex(order) < order.length - 1;
+  void _revealEditingField() {
+    if (_reviewing) return;
+    _reveal(_editingMemo ? _memoSectionKey : _amountKey);
   }
 
-  void _focusNextField() {
-    final order = _fieldOrder;
-    final nextIndex = _anchorIndex(order) + 1;
-    if (nextIndex < 0 || nextIndex >= order.length) return;
-    final target = order[nextIndex];
-    target.requestFocus();
+  void _reveal(GlobalKey key) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final fieldContext = target.context;
-      if (fieldContext == null || !fieldContext.mounted) return;
+      if (!mounted) return;
+      // A focus change or keyboard dismissal can supersede a queued scroll.
+      if ((key == _reviewKey) != _reviewing) return;
+      final target = key.currentContext;
+      if (target == null) return;
       Scrollable.ensureVisible(
-        fieldContext,
-        alignment: 0.25,
+        target,
+        alignment: 0.05,
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
       );
     });
+  }
+
+  void _focusMemo() {
+    _memoFocus.requestFocus();
+    _reveal(_memoSectionKey);
+  }
+
+  void _showReview() {
+    _dismissKeyboard();
+    setState(() => _reviewing = true);
+    _reveal(_reviewKey);
+  }
+
+  String _selectionSummary(_FormOptions options) {
+    final category =
+        options.categories
+            .where((item) => item.id == _categoryId)
+            .firstOrNull
+            ?.name ??
+        '카테고리 선택';
+    final method =
+        options.methods
+            .where((item) => item.id == _paymentMethodId)
+            .firstOrNull
+            ?.name ??
+        '결제수단 선택';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final date = DateTime(_date.year, _date.month, _date.day);
+    final day = date == today
+        ? '오늘'
+        : date == today.subtract(const Duration(days: 1))
+        ? '어제'
+        : formatShortDate(_date);
+    return '$category · $method · $day';
   }
 
   Future<void> _save(_FormOptions options) async {
