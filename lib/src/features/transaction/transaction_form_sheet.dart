@@ -117,11 +117,11 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
 
   List<FocusNode> get _fieldOrder => [
     _amountFocus,
+    _memoFocus,
     _categoryFocus,
     _paymentFocus,
     if (_isRefund && _refundChoiceCount > 0) _refundFocus,
     _dateFocus,
-    _memoFocus,
   ];
 
   @override
@@ -270,277 +270,294 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    widget.record != null ? '지출 수정' : '지출 추가',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.headlineMedium,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: '닫기',
-                                  onPressed: () => Navigator.pop(context),
-                                  icon: const Icon(Icons.close),
-                                ),
-                              ],
-                            ),
-                            if (widget.record == null &&
-                                (options.templates.isNotEmpty ||
-                                    options.recentExpenses.isNotEmpty)) ...[
-                              const SizedBox(height: 12),
-                              Text(
-                                '빠른 불러오기',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 8),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: [
-                                    for (final template in options.templates)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 8,
-                                        ),
-                                        child: ActionChip(
-                                          avatar: const Icon(
-                                            Icons.bookmark_outline,
-                                            size: 18,
-                                          ),
-                                          label: Text(template.name),
-                                          onPressed: () =>
-                                              _applyTemplate(template),
-                                        ),
-                                      ),
-                                    for (final record
-                                        in options.recentExpenses.take(3))
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 8,
-                                        ),
-                                        child: ActionChip(
-                                          avatar: const Icon(
-                                            Icons.history,
-                                            size: 18,
-                                          ),
-                                          label: Text(
-                                            record.memo.isEmpty
-                                                ? record.categoryName ?? '최근 지출'
-                                                : record.memo,
-                                          ),
-                                          onPressed: () => _applyRecent(record),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 20),
-                            TextFormField(
-                              controller: _amountController,
-                              focusNode: _amountFocus,
-                              autofocus: true,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [const AmountInputFormatter()],
-                              textInputAction: TextInputAction.next,
-                              onFieldSubmitted: (_) => _focusNextField(),
-                              onTapOutside: (_) => _dismissKeyboard(),
-                              style: Theme.of(context).textTheme.headlineLarge
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                              decoration: const InputDecoration(
-                                labelText: '금액',
-                                suffixText: '원',
-                                hintText: '0',
-                              ),
-                              validator: (value) {
-                                final amount = parseAmount(value ?? '');
-                                return amount == null || amount <= 0
-                                    ? '1원 이상 입력해 주세요.'
-                                    : null;
-                              },
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                for (final amount in [1000, 5000, 10000]) ...[
+                              Row(
+                                children: [
                                   Expanded(
-                                    child: OutlinedButton(
-                                      onPressed: () => _addAmount(amount),
-                                      child: Text('+${formatAmount(amount)}'),
+                                    child: Text(
+                                      widget.record != null ? '지출 수정' : '지출 추가',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.headlineMedium,
                                     ),
                                   ),
-                                  if (amount != 10000) const SizedBox(width: 8),
+                                  IconButton(
+                                    tooltip: '닫기',
+                                    onPressed: () => Navigator.pop(context),
+                                    icon: const Icon(Icons.close),
+                                  ),
                                 ],
+                              ),
+                              if (widget.record == null &&
+                                  (options.templates.isNotEmpty ||
+                                      options.recentExpenses.isNotEmpty)) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  '빠른 불러오기',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                                const SizedBox(height: 8),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      for (final template in options.templates)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 8,
+                                          ),
+                                          child: ActionChip(
+                                            avatar: const Icon(
+                                              Icons.bookmark_outline,
+                                              size: 18,
+                                            ),
+                                            label: Text(template.name),
+                                            onPressed: () =>
+                                                _applyTemplate(template),
+                                          ),
+                                        ),
+                                      for (final record
+                                          in options.recentExpenses.take(3))
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 8,
+                                          ),
+                                          child: ActionChip(
+                                            avatar: const Icon(
+                                              Icons.history,
+                                              size: 18,
+                                            ),
+                                            label: Text(
+                                              record.memo.isEmpty
+                                                  ? record.categoryName ??
+                                                        '최근 지출'
+                                                  : record.memo,
+                                            ),
+                                            onPressed: () =>
+                                                _applyRecent(record),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ],
-                            ),
-                            const SizedBox(height: 16),
-                            ...[
-                              SegmentedButton<bool>(
-                                segments: const [
-                                  ButtonSegment(
-                                    value: false,
-                                    icon: Icon(Icons.payments_outlined),
-                                    label: Text('일반 지출'),
-                                  ),
-                                  ButtonSegment(
-                                    value: true,
-                                    icon: Icon(Icons.replay_outlined),
-                                    label: Text('환불/취소'),
-                                  ),
-                                ],
-                                selected: {_isRefund},
-                                onSelectionChanged: (selection) {
-                                  setState(() => _isRefund = selection.first);
+                              const SizedBox(height: 20),
+                              TextFormField(
+                                controller: _amountController,
+                                focusNode: _amountFocus,
+                                autofocus: true,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [const AmountInputFormatter()],
+                                textInputAction: TextInputAction.next,
+                                onFieldSubmitted: (_) => _focusNextField(),
+                                onTapOutside: (_) => _dismissKeyboard(),
+                                style: Theme.of(context).textTheme.headlineLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                decoration: const InputDecoration(
+                                  labelText: '금액',
+                                  suffixText: '원',
+                                  hintText: '0',
+                                ),
+                                validator: (value) {
+                                  final amount = parseAmount(value ?? '');
+                                  return amount == null || amount <= 0
+                                      ? '1원 이상 입력해 주세요.'
+                                      : null;
                                 },
                               ),
-                              const SizedBox(height: 16),
-                              DropdownButtonFormField<int>(
-                                focusNode: _categoryFocus,
-                                initialValue: _categoryId,
-                                decoration: const InputDecoration(
-                                  labelText: '카테고리',
-                                  prefixIcon: Icon(Icons.category_outlined),
-                                ),
-                                items: [
-                                  for (final category in options.categories)
-                                    DropdownMenuItem(
-                                      value: category.id,
-                                      child: Text(category.name),
-                                    ),
-                                ],
-                                onTap: _dismissKeyboard,
-                                onChanged: (value) =>
-                                    setState(() => _categoryId = value),
-                                validator: (value) =>
-                                    value == null ? '카테고리를 선택해 주세요.' : null,
-                              ),
                               const SizedBox(height: 12),
-                              DropdownButtonFormField<int>(
-                                focusNode: _paymentFocus,
-                                initialValue: _paymentMethodId,
+                              TextFormField(
+                                controller: _memoController,
+                                focusNode: _memoFocus,
+                                maxLength: 80,
+                                textInputAction: TextInputAction.done,
+                                onFieldSubmitted: (_) => _dismissKeyboard(),
+                                onTapOutside: (_) => _dismissKeyboard(),
                                 decoration: const InputDecoration(
-                                  labelText: '결제수단',
-                                  prefixIcon: Icon(Icons.credit_card_outlined),
+                                  labelText: '어떤 지출인가요?',
+                                  hintText: '예: 친구와 점심',
+                                  prefixIcon: Icon(Icons.edit_note_outlined),
                                 ),
-                                items: [
-                                  for (final method in options.methods)
-                                    DropdownMenuItem(
-                                      value: method.id,
-                                      child: Text(method.name),
-                                    ),
-                                ],
-                                onTap: _dismissKeyboard,
-                                onChanged: (value) =>
-                                    setState(() => _paymentMethodId = value),
-                                validator: (value) =>
-                                    value == null ? '결제수단을 선택해 주세요.' : null,
                               ),
-                              if (_isRefund) ...[
-                                const SizedBox(height: 12),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  for (final amount in [1000, 5000, 10000]) ...[
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        onPressed: () => _addAmount(amount),
+                                        child: Text('+${formatAmount(amount)}'),
+                                      ),
+                                    ),
+                                    if (amount != 10000)
+                                      const SizedBox(width: 8),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              ...[
+                                SegmentedButton<bool>(
+                                  segments: const [
+                                    ButtonSegment(
+                                      value: false,
+                                      icon: Icon(Icons.payments_outlined),
+                                      label: Text('일반 지출'),
+                                    ),
+                                    ButtonSegment(
+                                      value: true,
+                                      icon: Icon(Icons.replay_outlined),
+                                      label: Text('환불/취소'),
+                                    ),
+                                  ],
+                                  selected: {_isRefund},
+                                  onSelectionChanged: (selection) {
+                                    setState(() => _isRefund = selection.first);
+                                  },
+                                ),
+                                const SizedBox(height: 16),
                                 DropdownButtonFormField<int>(
-                                  focusNode: _refundFocus,
-                                  initialValue:
-                                      options.recentExpenses.any(
-                                        (r) => r.id == _refundedExpenseId,
-                                      )
-                                      ? _refundedExpenseId
-                                      : null,
+                                  focusNode: _categoryFocus,
+                                  initialValue: _categoryId,
                                   decoration: const InputDecoration(
-                                    labelText: '원 지출 연결 (선택)',
-                                    prefixIcon: Icon(Icons.link),
+                                    labelText: '카테고리',
+                                    prefixIcon: Icon(Icons.category_outlined),
                                   ),
                                   items: [
-                                    for (final record in options.recentExpenses)
+                                    for (final category in options.categories)
                                       DropdownMenuItem(
-                                        value: record.id,
-                                        child: Text(
-                                          '${record.memo.isEmpty ? record.categoryName : record.memo}'
-                                          ' · ${formatWon(record.amount)}',
-                                        ),
+                                        value: category.id,
+                                        child: Text(category.name),
                                       ),
                                   ],
                                   onTap: _dismissKeyboard,
-                                  onChanged: (value) {
-                                    setState(() => _refundedExpenseId = value);
+                                  onChanged: (value) =>
+                                      setState(() => _categoryId = value),
+                                  validator: (value) =>
+                                      value == null ? '카테고리를 선택해 주세요.' : null,
+                                ),
+                                const SizedBox(height: 12),
+                                DropdownButtonFormField<int>(
+                                  focusNode: _paymentFocus,
+                                  initialValue: _paymentMethodId,
+                                  decoration: const InputDecoration(
+                                    labelText: '결제수단',
+                                    prefixIcon: Icon(
+                                      Icons.credit_card_outlined,
+                                    ),
+                                  ),
+                                  items: [
+                                    for (final method in options.methods)
+                                      DropdownMenuItem(
+                                        value: method.id,
+                                        child: Text(method.name),
+                                      ),
+                                  ],
+                                  onTap: _dismissKeyboard,
+                                  onChanged: (value) =>
+                                      setState(() => _paymentMethodId = value),
+                                  validator: (value) =>
+                                      value == null ? '결제수단을 선택해 주세요.' : null,
+                                ),
+                                if (_isRefund) ...[
+                                  const SizedBox(height: 12),
+                                  DropdownButtonFormField<int>(
+                                    focusNode: _refundFocus,
+                                    initialValue:
+                                        options.recentExpenses.any(
+                                          (r) => r.id == _refundedExpenseId,
+                                        )
+                                        ? _refundedExpenseId
+                                        : null,
+                                    decoration: const InputDecoration(
+                                      labelText: '원 지출 연결 (선택)',
+                                      prefixIcon: Icon(Icons.link),
+                                    ),
+                                    items: [
+                                      for (final record
+                                          in options.recentExpenses)
+                                        DropdownMenuItem(
+                                          value: record.id,
+                                          child: Text(
+                                            '${record.memo.isEmpty ? record.categoryName : record.memo}'
+                                            ' · ${formatWon(record.amount)}',
+                                          ),
+                                        ),
+                                    ],
+                                    onTap: _dismissKeyboard,
+                                    onChanged: (value) {
+                                      setState(
+                                        () => _refundedExpenseId = value,
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ],
+                              const SizedBox(height: 12),
+                              Focus(
+                                focusNode: _dateFocus,
+                                child: ListenableBuilder(
+                                  listenable: _dateFocus,
+                                  builder: (context, _) {
+                                    final focused = _dateFocus.hasFocus;
+                                    final scheme = Theme.of(
+                                      context,
+                                    ).colorScheme;
+                                    return ListTile(
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                          ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        side: BorderSide(
+                                          color: focused
+                                              ? scheme.primary
+                                              : scheme.outlineVariant,
+                                          width: focused ? 1.5 : 1,
+                                        ),
+                                      ),
+                                      leading: const Icon(
+                                        Icons.calendar_today_outlined,
+                                      ),
+                                      title: const Text('날짜'),
+                                      trailing: Text(formatShortDate(_date)),
+                                      onTap: _pickDate,
+                                    );
                                   },
                                 ),
-                              ],
-                            ],
-                            const SizedBox(height: 12),
-                            Focus(
-                              focusNode: _dateFocus,
-                              child: ListenableBuilder(
-                                listenable: _dateFocus,
-                                builder: (context, _) {
-                                  final focused = _dateFocus.hasFocus;
-                                  final scheme = Theme.of(context).colorScheme;
-                                  return ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                      side: BorderSide(
-                                        color: focused
-                                            ? scheme.primary
-                                            : scheme.outlineVariant,
-                                        width: focused ? 1.5 : 1,
-                                      ),
-                                    ),
-                                    leading: const Icon(
-                                      Icons.calendar_today_outlined,
-                                    ),
-                                    title: const Text('날짜'),
-                                    trailing: Text(formatShortDate(_date)),
-                                    onTap: _pickDate,
-                                  );
-                                },
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => _setRelativeDate(0),
-                                    icon: const Icon(Icons.today_outlined),
-                                    label: const Text('오늘'),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => _setRelativeDate(0),
+                                      icon: const Icon(Icons.today_outlined),
+                                      label: const Text('오늘'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => _setRelativeDate(-1),
+                                      icon: const Icon(Icons.history),
+                                      label: const Text('어제'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              if (_isRefund)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Text(
+                                    '입력한 금액만큼 지출이 줄고 남은 예산이 늘어납니다.',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => _setRelativeDate(-1),
-                                    icon: const Icon(Icons.history),
-                                    label: const Text('어제'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _memoController,
-                              focusNode: _memoFocus,
-                              maxLength: 80,
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => _dismissKeyboard(),
-                              onTapOutside: (_) => _dismissKeyboard(),
-                              decoration: const InputDecoration(
-                                labelText: '메모 (선택)',
-                                prefixIcon: Icon(Icons.edit_note_outlined),
-                              ),
-                            ),
-                            if (_isRefund)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: Text(
-                                  '입력한 금액만큼 지출이 줄고 남은 예산이 늘어납니다.',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ),
                             ],
                           ),
                         ),
@@ -569,9 +586,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet> {
                                     style: OutlinedButton.styleFrom(
                                       minimumSize: const Size(0, 48),
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(
-                                          12,
-                                        ),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
                                     ),
                                     icon: const Icon(Icons.arrow_downward),

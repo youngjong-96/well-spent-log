@@ -270,7 +270,11 @@ void main() {
   testWidgets('다음 버튼이 입력 순서대로 포커스를 옮긴다', (tester) async {
     final repository = _FakeSpendingRepository();
     addTearDown(repository.dispose);
-    await _openExpenseForm(tester, repository: repository, theme: AppTheme.light);
+    await _openExpenseForm(
+      tester,
+      repository: repository,
+      theme: AppTheme.light,
+    );
 
     final next = find.widgetWithText(OutlinedButton, '다음');
     expect(next, findsOneWidget);
@@ -279,6 +283,10 @@ void main() {
     expect(_textField('금액', tester).focusNode!.hasFocus, isTrue);
 
     await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pumpAndSettle();
+    expect(_textField('어떤 지출인가요?', tester).focusNode!.hasFocus, isTrue);
+
+    await tester.tap(next);
     await tester.pumpAndSettle();
     expect(_dropdownFocus('카테고리', tester).hasFocus, isTrue);
 
@@ -293,9 +301,6 @@ void main() {
       isTrue,
     );
 
-    await tester.tap(next);
-    await tester.pumpAndSettle();
-    expect(_textField('메모 (선택)', tester).focusNode!.hasFocus, isTrue);
     expect(tester.widget<OutlinedButton>(next).onPressed, isNull);
 
     final amountField = find.byWidgetPredicate(
@@ -311,10 +316,46 @@ void main() {
     expect(tester.widget<OutlinedButton>(next).onPressed, isNotNull);
     await tester.tap(next);
     await tester.pumpAndSettle();
+    expect(_textField('어떤 지출인가요?', tester).focusNode!.hasFocus, isTrue);
+
+    await tester.tap(next);
+    await tester.pumpAndSettle();
     expect(_dropdownFocus('카테고리', tester).hasFocus, isTrue);
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('메모는 펼쳐진 선택 입력이며 완료로 저장하지 않는다', (tester) async {
+    final repository = _FakeSpendingRepository();
+    addTearDown(repository.dispose);
+    await _openExpenseForm(
+      tester,
+      repository: repository,
+      theme: AppTheme.light,
+    );
+    final memo = find.byType(TextFormField).at(1);
+    expect(
+      tester.getTopLeft(memo).dy,
+      greaterThan(tester.getTopLeft(find.byType(TextFormField).first).dy),
+    );
+    expect(
+      tester.getTopLeft(memo).dy,
+      lessThan(
+        tester.getTopLeft(find.byType(DropdownButtonFormField<int>).first).dy,
+      ),
+    );
+    expect(_textField('어떤 지출인가요?', tester).maxLength, 80);
+    await tester.enterText(find.byType(TextFormField).first, '12000');
+    await tester.enterText(memo, List.filled(81, '가').join());
+    expect(_textField('어떤 지출인가요?', tester).controller!.text.length, 80);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(repository.savedTransactions, isEmpty);
+    expect(find.byType(TransactionFormSheet), findsOneWidget);
+    await tester.enterText(memo, '');
+    await tester.tap(find.widgetWithText(FilledButton, '저장'));
+    await tester.pumpAndSettle();
+    expect(repository.savedTransactions.single.memo, isEmpty);
+  });
   testWidgets('환불 입력에서는 다음 버튼이 원 지출 연결로 이동한다', (tester) async {
     final repository = _FakeSpendingRepository()
       ..transactions = [
@@ -330,11 +371,17 @@ void main() {
         ),
       ];
     addTearDown(repository.dispose);
-    await _openExpenseForm(tester, repository: repository, theme: AppTheme.dark);
+    await _openExpenseForm(
+      tester,
+      repository: repository,
+      theme: AppTheme.dark,
+    );
 
     await tester.tap(find.text('환불/취소'));
     await tester.pumpAndSettle();
     final next = find.widgetWithText(OutlinedButton, '다음');
+    await tester.tap(next);
+    await tester.pumpAndSettle();
     await tester.tap(next);
     await tester.pumpAndSettle();
     await tester.tap(next);
@@ -383,9 +430,9 @@ Future<void> _openExpenseForm(
         theme: theme,
         builder: (context, child) {
           return MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              textScaler: TextScaler.linear(textScale),
-            ),
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
             child: child!,
           );
         },
