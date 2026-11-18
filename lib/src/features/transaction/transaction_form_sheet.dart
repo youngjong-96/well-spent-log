@@ -140,37 +140,36 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
   bool _coachSkipped = false;
   bool _hasTemplates = false;
 
-  void _advanceOnAction(int step) {
-    if (widget.onboarding && !_coachSkipped && _coachStep == step) {
-      _nextCoach();
-    }
-  }
+  // Matches the vertical layout, with quick loading first when available.
+  List<int> get _coachOrder => [if (_hasTemplates) 6, 0, 1, 3, 4, 5, 2, 7];
+  int get _coachKind => _coachOrder[_coachStep];
 
   void _nextCoach() {
     if (!mounted) return;
     setState(() {
       _coachStep++;
-      if (_coachStep == 6 && !_hasTemplates) _coachStep++;
-      if (_coachStep > 7) _coachSkipped = true;
+      if (_coachStep >= _coachOrder.length) _coachSkipped = true;
     });
-    if (_coachStep == 3 || _coachStep == 4) {
+    if (_coachSkipped) return;
+    if (_coachKind == 3 || _coachKind == 4) {
       _focusMemo();
-    } else if (_coachStep >= 5) {
+    } else if (_coachKind == 5 || _coachKind == 2 || _coachKind == 7) {
       _dismissKeyboard();
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _coachSkipped) return;
       final target = _coachTarget.currentContext;
-      if (target != null)
+      if (target != null) {
         Scrollable.ensureVisible(
           target,
-          alignment: _coachStep == 6 ? 0 : .1,
+          alignment: .1,
           duration: const Duration(milliseconds: 200),
         );
+      }
     });
   }
 
-  GlobalKey get _coachTarget => switch (_coachStep) {
+  GlobalKey get _coachTarget => switch (_coachKind) {
     0 => _amountKey,
     1 => _quickAmountKey,
     2 => _actionsKey,
@@ -205,12 +204,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
     ];
     return CoachMark(
       target: _coachTarget,
-      additionalTargets: _coachStep == 5
+      additionalTargets: _coachKind == 5
           ? [_paymentCoachKey, _dateCoachKey]
           : const [],
-      title: titles[_coachStep],
-      description: descriptions[_coachStep],
-      current: _coachStep + 1 - (!_hasTemplates && _coachStep > 6 ? 1 : 0),
+      title: titles[_coachKind],
+      description: descriptions[_coachKind],
+      current: _coachStep + 1,
       total: _hasTemplates ? 9 : 8,
       onNext: _nextCoach,
       onSkip: () => setState(() => _coachSkipped = true),
@@ -243,12 +242,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
       _refundedExpenseId = record.refundedExpenseId;
     }
     _optionsFuture = _loadOptions();
-    _amountController.addListener(() {
-      if ((parseAmount(_amountController.text) ?? 0) > 0) _advanceOnAction(0);
-    });
-    _memoController.addListener(() {
-      if (_memoController.text.isNotEmpty) _advanceOnAction(3);
-    });
   }
 
   @override
@@ -279,7 +272,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
       includeInactive: widget.record != null,
     );
     final templates = await repository.listTemplates();
-    _hasTemplates = templates.isNotEmpty;
     final recentExpenseCandidates = await repository.listTransactions(
       limit: widget.record == null ? 6 : null,
       type: RecordType.expense,
@@ -294,6 +286,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
               paymentMethodIds.contains(record.paymentMethodId),
         )
         .toList();
+    _hasTemplates = templates.isNotEmpty;
     final lastSelection = await repository.getLastExpenseSelection();
     if (widget.record != null) {
       // Keep the original selections, including archived options.
@@ -410,50 +403,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                   ).textTheme.titleMedium,
                                 ),
                                 const SizedBox(height: 8),
-                                SingleChildScrollView(
-                                  key: _templatesKey,
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    children: [
-                                      for (final template in options.templates)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 8,
-                                          ),
-                                          child: ActionChip(
-                                            avatar: const Icon(
-                                              Icons.bookmark_outline,
-                                              size: 18,
-                                            ),
-                                            label: Text(template.name),
-                                            onPressed: () =>
-                                                _applyTemplate(template),
-                                          ),
-                                        ),
-                                      for (final record
-                                          in options.recentExpenses.take(3))
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 8,
-                                          ),
-                                          child: ActionChip(
-                                            avatar: const Icon(
-                                              Icons.history,
-                                              size: 18,
-                                            ),
-                                            label: Text(
-                                              record.memo.isEmpty
-                                                  ? record.categoryName ??
-                                                        '최근 지출'
-                                                  : record.memo,
-                                            ),
-                                            onPressed: () =>
-                                                _applyRecent(record),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
+                                _quickLoadOptions(options),
                               ],
                               const SizedBox(height: 20),
                               TextFormField(
@@ -481,6 +431,10 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                 },
                               ),
                               const SizedBox(height: 12),
+                              if (widget.onboarding) ...[
+                                _quickAmounts(),
+                                const SizedBox(height: 12),
+                              ],
                               Column(
                                 key: _memoSectionKey,
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -501,32 +455,14 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  TextFieldTapRegion(
-                                    child: Row(
-                                      key: _quickAmountKey,
-                                      children: [
-                                        for (final amount in [
-                                          1000,
-                                          5000,
-                                          10000,
-                                        ]) ...[
-                                          Expanded(
-                                            child: OutlinedButton(
-                                              onPressed: () =>
-                                                  _addAmount(amount),
-                                              child: Text(
-                                                '+${formatAmount(amount)}',
-                                              ),
-                                            ),
-                                          ),
-                                          if (amount != 10000)
-                                            const SizedBox(width: 8),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  if (_editingMemo) ...[
+                                  if (!widget.onboarding) ...[
+                                    const SizedBox(height: 8),
+                                    _quickAmounts(),
+                                  ],
+                                  if (_editingMemo ||
+                                      (widget.onboarding &&
+                                          !_coachSkipped &&
+                                          _coachKind == 4)) ...[
                                     const SizedBox(height: 12),
                                     TextFieldTapRegion(
                                       child: Material(
@@ -581,6 +517,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                 ),
                                 const SizedBox(height: 16),
                                 DropdownButtonFormField<int>(
+                                  isExpanded: true,
                                   key: _confirmationKey,
                                   focusNode: _categoryFocus,
                                   initialValue: _categoryId,
@@ -592,19 +529,23 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                     for (final category in options.categories)
                                       DropdownMenuItem(
                                         value: category.id,
-                                        child: Text(category.name),
+                                        child: Text(
+                                          category.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                   ],
                                   onTap: _dismissKeyboard,
                                   onChanged: (value) {
                                     setState(() => _categoryId = value);
-                                    _advanceOnAction(5);
                                   },
                                   validator: (value) =>
                                       value == null ? '카테고리를 선택해 주세요.' : null,
                                 ),
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<int>(
+                                  isExpanded: true,
                                   focusNode: _paymentFocus,
                                   key: _paymentCoachKey,
                                   initialValue: _paymentMethodId,
@@ -618,13 +559,16 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                     for (final method in options.methods)
                                       DropdownMenuItem(
                                         value: method.id,
-                                        child: Text(method.name),
+                                        child: Text(
+                                          method.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                   ],
                                   onTap: _dismissKeyboard,
                                   onChanged: (value) {
                                     setState(() => _paymentMethodId = value);
-                                    _advanceOnAction(5);
                                   },
                                   validator: (value) =>
                                       value == null ? '결제수단을 선택해 주세요.' : null,
@@ -632,6 +576,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                 if (_isRefund) ...[
                                   const SizedBox(height: 12),
                                   DropdownButtonFormField<int>(
+                                    isExpanded: true,
                                     focusNode: _refundFocus,
                                     initialValue:
                                         options.recentExpenses.any(
@@ -750,13 +695,16 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                             child: Row(
                               key: _actionsKey,
                               children: [
-                                if (!_reviewing) ...[
+                                if (!_reviewing ||
+                                    (widget.onboarding &&
+                                        !_coachSkipped &&
+                                        _coachKind == 2)) ...[
                                   Expanded(
                                     flex: 3,
                                     child: OutlinedButton.icon(
                                       onPressed: _saving
                                           ? null
-                                          : (_editingMemo
+                                          : (_editingMemo || _reviewing
                                                 ? _showReview
                                                 : _focusMemo),
                                       style: OutlinedButton.styleFrom(
@@ -769,7 +717,9 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                       ),
                                       icon: const Icon(Icons.arrow_downward),
                                       label: Text(
-                                        _editingMemo ? '분류·결제 확인' : '메모 입력',
+                                        _editingMemo || _reviewing
+                                            ? '분류·결제 확인'
+                                            : '메모 입력',
                                         textAlign: TextAlign.center,
                                       ),
                                     ),
@@ -814,8 +764,87 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
     );
   }
 
+  Widget _quickAmounts() => TextFieldTapRegion(
+    child: Row(
+      key: _quickAmountKey,
+      children: [
+        for (final amount in [1000, 5000, 10000]) ...[
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => _addAmount(amount),
+              child: Text('+${formatAmount(amount)}'),
+            ),
+          ),
+          if (amount != 10000) const SizedBox(width: 8),
+        ],
+      ],
+    ),
+  );
+
+  Widget _quickLoadOptions(_FormOptions options) {
+    Widget choice(String name, IconData icon, VoidCallback onPressed) {
+      final label = Text(name, maxLines: 1, overflow: TextOverflow.ellipsis);
+      if (!widget.onboarding) {
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ActionChip(
+            avatar: Icon(icon, size: 18),
+            label: label,
+            onPressed: onPressed,
+          ),
+        );
+      }
+      return OutlinedButton(
+        onPressed: onPressed,
+        child: Row(
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: label),
+          ],
+        ),
+      );
+    }
+
+    final children = [
+      for (final template in options.templates)
+        choice(
+          template.name,
+          Icons.bookmark_outline,
+          () => _applyTemplate(template),
+        ),
+      for (final record in options.recentExpenses.take(3))
+        choice(
+          record.memo.isEmpty ? record.categoryName ?? '최근 지출' : record.memo,
+          Icons.history,
+          () => _applyRecent(record),
+        ),
+    ];
+    if (!widget.onboarding) {
+      return SingleChildScrollView(
+        key: _templatesKey,
+        scrollDirection: Axis.horizontal,
+        child: Row(children: children),
+      );
+    }
+    return LayoutBuilder(
+      key: _templatesKey,
+      builder: (context, constraints) => Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          for (final child in children)
+            SizedBox(
+              width: (constraints.maxWidth - 10) / 2,
+              height: 72,
+              child: child,
+            ),
+        ],
+      ),
+    );
+  }
+
   void _applyTemplate(ExpenseTemplate template) {
-    _advanceOnAction(6);
     _dismissKeyboard();
     setState(() {
       _amountController.text = formatAmount(template.amount);
@@ -826,7 +855,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
   }
 
   void _addAmount(int amount) {
-    _advanceOnAction(1);
     final current = parseAmount(_amountController.text) ?? 0;
     _amountController.text = formatAmount(current + amount);
     _amountController.selection = TextSelection.collapsed(
@@ -838,7 +866,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
     _dismissKeyboard();
     final now = DateTime.now().add(Duration(days: dayOffset));
     setState(() => _date = DateTime(now.year, now.month, now.day));
-    _advanceOnAction(5);
   }
 
   void _applyRecent(TransactionRecord record) {
@@ -861,7 +888,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
     );
     if (selected != null) {
       setState(() => _date = selected);
-      _advanceOnAction(5);
     }
   }
 
@@ -917,15 +943,11 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
   }
 
   void _focusMemo() {
-    _advanceOnAction(2);
     _memoFocus.requestFocus();
     _reveal(_memoSectionKey);
   }
 
   void _showReview() {
-    if (widget.onboarding && !_coachSkipped && _coachStep < 5) {
-      setState(() => _coachStep = 5);
-    }
     _dismissKeyboard();
     setState(() => _reviewing = true);
     _reveal(_reviewKey);

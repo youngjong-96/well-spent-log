@@ -21,6 +21,26 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int _step = 0;
+  bool _showIntroduction = false;
+  static const _introductions = [
+    ('카테고리', '지출을 어떤 종류로 나눌지 정해요', '나중에 어디에 많이 썼는지 한눈에 보려면 필요해요.'),
+    ('예산', '카테고리별 한 달 예산을 정해요', '기록할 때마다 남은 예산을 바로 확인할 수 있어요.'),
+    ('결제수단', '자주 쓰는 카드와 페이를 등록해요', '어떤 수단으로 얼마나 썼는지 구분해요.'),
+    ('첫 기록', '실제로 지출 하나를 기록해봐요', '쓰자마자 기록하는 게 잘쓸결심의 핵심이에요.'),
+  ];
+
+  void _goToStep(int step) {
+    setState(() {
+      _step = step;
+      _showIntroduction = step > 0;
+    });
+  }
+
+  Future<void> _startStep() async {
+    setState(() => _showIntroduction = false);
+    if (_step == 4) await _record();
+  }
+
   bool _busy = false;
   bool _loaded = false;
   String? _error;
@@ -131,11 +151,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             amount: parseAmount(_budgets[category.id]!.text) ?? 0,
           );
         }
-        if (mounted) setState(() => _step++);
+        if (mounted) _goToStep(_step + 1);
       });
     } else {
-      setState(() => _step++);
-      if (_step == 4) await _record();
+      _goToStep(_step + 1);
     }
   }
 
@@ -196,33 +215,43 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       runSpacing: 10,
       children: [
         for (final child in children)
-          SizedBox(width: (constraints.maxWidth - 10) / 2, child: child),
+          SizedBox(
+            width: (constraints.maxWidth - 10) / 2,
+            height: 72,
+            child: child,
+          ),
       ],
     ),
   );
-  Widget _chip(String name, bool selected, VoidCallback onTap) => FilterChip(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    side: BorderSide(
-      color: selected
-          ? Theme.of(context).colorScheme.primary
-          : Theme.of(context).colorScheme.outlineVariant,
-    ),
-    selectedColor: Theme.of(context).colorScheme.primaryContainer,
-    avatar: selected
-        ? Icon(
-            Icons.circle,
-            size: 8,
-            color: Theme.of(context).colorScheme.primary,
-          )
-        : null,
-    label: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Text(name),
-    ),
-    selected: selected,
-    onSelected: _busy ? null : (_) => onTap(),
-    showCheckmark: false,
-  );
+  Widget _chip(String name, bool selected, VoidCallback onTap) =>
+      OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          alignment: Alignment.centerLeft,
+          backgroundColor: selected
+              ? Theme.of(context).colorScheme.primaryContainer
+              : null,
+          side: BorderSide(
+            color: selected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.outlineVariant,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        onPressed: _busy ? null : onTap,
+        child: Row(
+          children: [
+            if (selected) ...[
+              const Icon(Icons.circle, size: 8),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -237,12 +266,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       child: Scaffold(
         appBar: AppBar(
           leading: _step > 0
-              ? BackButton(
-                  onPressed: _busy ? null : () => setState(() => _step--),
-                )
+              ? BackButton(onPressed: _busy ? null : () => _goToStep(_step - 1))
               : null,
           actions: [
-            if (_step > 0)
+            if (_step > 0 && !_showIntroduction)
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text('$_step/4'),
@@ -267,6 +294,34 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                                 onPressed: _load,
                                 child: const Text('다시 시도'),
                               ),
+                      )
+                    : _showIntroduction
+                    ? Center(
+                        child: Card(
+                          key: const ValueKey('onboarding-introduction'),
+                          margin: const EdgeInsets.all(20),
+                          child: Padding(
+                            padding: const EdgeInsets.all(28),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text('$_step/4'),
+                                const SizedBox(height: 20),
+                                Text(
+                                  _introductions[_step - 1].$1,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.headlineLarge,
+                                ),
+                                const SizedBox(height: 20),
+                                Text(_introductions[_step - 1].$2),
+                                const SizedBox(height: 12),
+                                Text(_introductions[_step - 1].$3),
+                              ],
+                            ),
+                          ),
+                        ),
                       )
                     : ListView(
                         padding: const EdgeInsets.all(20),
@@ -344,7 +399,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                                     const AmountInputFormatter(),
                                   ],
                                   decoration: InputDecoration(
-                                    labelText: category.name,
+                                    label: Text(
+                                      category.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                     suffixText: '원',
                                     hintText: '예산 없음',
                                   ),
@@ -415,7 +474,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     ),
                   ),
                 ),
-              if (_step == 2)
+              if (_step == 2 && !_showIntroduction)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: TextFieldTapRegion(
@@ -450,14 +509,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                 child: Row(
                   children: [
-                    if (_step == 2) ...[
+                    if (_step == 2 && !_showIntroduction) ...[
                       Expanded(
                         child: OutlinedButton(
                           onPressed: _busy
                               ? null
                               : () {
                                   FocusManager.instance.primaryFocus?.unfocus();
-                                  setState(() => _step++);
+                                  _goToStep(_step + 1);
                                 },
                           child: const Text('나중에 할게요'),
                         ),
@@ -468,11 +527,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       child: FilledButton(
                         onPressed: _busy || !_loaded
                             ? null
+                            : _showIntroduction
+                            ? _startStep
                             : _step == 4
                             ? _record
                             : _next,
                         child: Text(
-                          _step == 0
+                          _showIntroduction
+                              ? '시작'
+                              : _step == 0
                               ? '시작하기'
                               : _step == 4
                               ? '첫 기록 시작'
