@@ -163,6 +163,9 @@ final onboardingNeededProvider = FutureProvider<bool>((ref) async {
   return !await ref.read(settingsStoreProvider).getOnboardingCompleted();
 });
 
-final firstRecordHintProvider = FutureProvider<bool>(
-  (ref) => ref.watch(settingsStoreProvider).getFirstRecordHintPending(),
-);
+final firstRecordHintProvider = FutureProvider<bool>((ref) async {
+  final settings = ref.watch(settingsStoreProvider);
+  final pending = await settings.getFirstRecordHintPending();
+  if (pending) await settings.setFirstRecordHintPending(false);
+  return pending;
+});

@@ -213,9 +213,6 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   void _dismissHint() {
     setState(() => _hintDismissed = true);
-    if (ref.read(firstRecordHintProvider).value == true) {
-      ref.read(settingsStoreProvider).setFirstRecordHintPending(false);
-    }
   }
 
   void _selectTab(int index) {

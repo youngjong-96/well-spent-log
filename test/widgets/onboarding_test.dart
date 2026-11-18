@@ -236,6 +236,16 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  test('첫 기록 안내는 앱을 다시 실행해도 한 번만 표시한다', () async {
+    await SettingsStore().setFirstRecordHintPending(true);
+    final firstSession = ProviderContainer();
+    expect(await firstSession.read(firstRecordHintProvider.future), isTrue);
+    firstSession.dispose();
+    final nextSession = ProviderContainer();
+    addTearDown(nextSession.dispose);
+    expect(await nextSession.read(firstRecordHintProvider.future), isFalse);
+  });
+
   test('소프트 삭제된 기존 거래도 온보딩 완료 대상이다', () async {
     final category = (await repository.listCategories()).first;
     final method = (await repository.listPaymentMethods()).first;
