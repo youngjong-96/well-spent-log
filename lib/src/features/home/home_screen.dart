@@ -10,9 +10,16 @@ import '../../shared/widgets/transaction_list_tile.dart';
 import '../transaction/transaction_form_sheet.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({this.onOpenCategoryDetails, super.key});
+  const HomeScreen({
+    this.onOpenCategoryDetails,
+    this.coachCategoryId,
+    this.coachTargetKey,
+    super.key,
+  });
 
   final ValueChanged<int>? onOpenCategoryDetails;
+  final int? coachCategoryId;
+  final GlobalKey? coachTargetKey;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -20,6 +27,14 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final Set<int> _amountCategoryIds = {};
+  final _budgetScrollController = ScrollController();
+  int? _revealedCoachCategory;
+
+  @override
+  void dispose() {
+    _budgetScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +46,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         error: (error, stackTrace) =>
             _ErrorBody(onRetry: () => ref.invalidate(homeSummaryProvider)),
         data: (data) {
+          if (widget.coachCategoryId != null &&
+              _revealedCoachCategory != widget.coachCategoryId) {
+            _revealedCoachCategory = widget.coachCategoryId;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || !_budgetScrollController.hasClients) return;
+              final index = data.budgetUsages.indexWhere(
+                (u) => u.categoryId == widget.coachCategoryId,
+              );
+              _budgetScrollController.jumpTo(
+                (index < 0 ? 0.0 : index * 174.0).clamp(
+                  0.0,
+                  _budgetScrollController.position.maxScrollExtent,
+                ),
+              );
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                final target = widget.coachTargetKey?.currentContext;
+                if (target != null) {
+                  Scrollable.ensureVisible(
+                    target,
+                    alignment: .25,
+                    duration: const Duration(milliseconds: 200),
+                  );
+                }
+              });
+            });
+          }
           final totalBudget = data.budgetUsages.fold<int>(
             0,
             (sum, usage) => sum + usage.budgetAmount.amount,
@@ -100,6 +142,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: SizedBox(
                       height: 220,
                       child: ListView.separated(
+                        controller: _budgetScrollController,
                         scrollDirection: Axis.horizontal,
                         itemCount: data.budgetUsages.length,
                         separatorBuilder: (context, index) =>
@@ -107,12 +150,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         itemBuilder: (context, index) {
                           final usage = data.budgetUsages[index];
                           return SizedBox(
+                            key: usage.categoryId == widget.coachCategoryId
+                                ? widget.coachTargetKey
+                                : null,
                             width: 164,
                             child: _BudgetCategoryCard(
                               usage: usage,
-                              showAmount: _amountCategoryIds.contains(
-                                usage.categoryId,
-                              ),
+                              showAmount:
+                                  usage.categoryId == widget.coachCategoryId ||
+                                  _amountCategoryIds.contains(usage.categoryId),
                               onToggleDisplay: () {
                                 setState(() {
                                   if (!_amountCategoryIds.add(

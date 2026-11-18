@@ -221,6 +221,8 @@ void main() {
         overrides: [
           financeRepositoryProvider.overrideWithValue(repository),
           appInitializationProvider.overrideWith((ref) async {}),
+          onboardingNeededProvider.overrideWith((ref) async => false),
+          firstRecordHintProvider.overrideWith((ref) async => false),
           lockServiceProvider.overrideWithValue(const _UnlockedLockService()),
         ],
         child: const WellSpentApp(),
@@ -230,6 +232,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
 
+    await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));

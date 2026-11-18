@@ -36,7 +36,15 @@ class FinanceRepository {
   Stream<int> get changes => _changes.stream;
 
   Future<void> initialize() async {
-    await _database.database;
+    final db = await _database.database;
+    // Include soft-deleted records before retention cleanup.
+    if ((await db.query(
+      'transactions',
+      columns: ['id'],
+      limit: 1,
+    )).isNotEmpty) {
+      await _settingsStore.setOnboardingCompleted();
+    }
     await purgeExpiredDeletedTransactions();
     await ensureBudgetPeriod(DateTime.now());
   }
@@ -403,6 +411,45 @@ class FinanceRepository {
       {
         'name': name.trim(),
         'color_hex': colorHex,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    _notifyChanged();
+  }
+
+  Future<void> setCategoryActive(int id, bool active) async {
+    final db = await _database.database;
+    await db.transaction((txn) async {
+      if (!active) {
+        final others = await txn.query(
+          'categories',
+          where: 'is_active = 1 AND id != ?',
+          whereArgs: [id],
+          limit: 1,
+        );
+        if (others.isEmpty) throw StateError('최소 1개 카테고리를 유지해 주세요.');
+      }
+      await txn.update(
+        'categories',
+        {
+          'is_active': active ? 1 : 0,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
+    _notifyChanged();
+  }
+
+  Future<void> setPaymentMethodActive(int id, bool active) async {
+    final db = await _database.database;
+    await db.update(
+      'payment_methods',
+      {
+        'is_active': active ? 1 : 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',

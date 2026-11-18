@@ -7,6 +7,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../local/app_database.dart';
 import '../local/spending_data.dart';
+import '../settings/settings_store.dart';
 
 class BackupService {
   BackupService(this._appDatabase, {Directory? exportDirectory})
@@ -138,6 +139,8 @@ class BackupService {
         throw const FormatException('백업 데이터의 연결 정보가 올바르지 않습니다.');
       }
     });
+    await SettingsStore().setOnboardingCompleted();
+    await SettingsStore().setFirstRecordHintPending(false);
   }
 
   Future<List<Map<String, Object?>>> _rowsForExport(Database db, String table) {
