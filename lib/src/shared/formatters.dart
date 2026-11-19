@@ -3,9 +3,9 @@ import 'package:intl/intl.dart';
 
 import '../app/theme/app_colors.dart';
 
-final _currencyFormat = NumberFormat.decimalPattern('ko_KR');
+import '../domain/models/money.dart';
 
-String formatAmount(int amount) => _currencyFormat.format(amount);
+String formatAmount(int amount) => formatGroupedInteger(amount);
 
 int? parseAmount(String text) => int.tryParse(text.replaceAll(',', '').trim());
 
@@ -53,7 +53,7 @@ class AmountInputFormatter extends TextInputFormatter {
 
 String formatWon(int amount, {bool signed = false}) {
   final prefix = signed && amount > 0 ? '+' : '';
-  return '$prefix${_currencyFormat.format(amount)}원';
+  return '$prefix${formatGroupedInteger(amount)}원';
 }
 
 String formatDate(DateTime date) {

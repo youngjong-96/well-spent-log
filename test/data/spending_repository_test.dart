@@ -15,12 +15,14 @@ import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 
 class _Alerts extends NotificationService {
   final thresholds = <int>[];
+  bool fail = false;
   @override
   Future<void> showBudgetAlert({
     required int id,
     required String categoryName,
     required int threshold,
   }) async {
+    if (fail) throw StateError('Notification unavailable');
     thresholds.add(threshold);
   }
 }
@@ -293,6 +295,153 @@ void main() {
       expect(file.name, isNot(contains('/')));
       expect(file.content, expectedBytes);
       expect(utf8.decode(file.content), contains('"점심, ""메모""\n둘째 줄"'));
+    },
+  );
+
+  test(
+    'alert thresholds are exact for large integers and reset at zero budget',
+    () async {
+      const budget = 9000000000000000000;
+      await repository.setBudget(categoryId: 1, amount: budget, anchor: month);
+      await repository.addTransaction(draft(budget ~/ 2 - 1));
+      expect(alerts.thresholds, isEmpty);
+      await repository.addTransaction(draft(1));
+      expect(alerts.thresholds, [50]);
+
+      await repository.setBudget(categoryId: 1, amount: 0, anchor: month);
+      expect(
+        (await database.database).query('alert_history'),
+        completion(isEmpty),
+      );
+      await repository.setBudget(categoryId: 1, amount: budget, anchor: month);
+      expect(alerts.thresholds, [50, 50]);
+    },
+  );
+
+  test(
+    'failed notification does not fail a saved expense or consume its threshold',
+    () async {
+      await repository.setBudget(categoryId: 1, amount: 100, anchor: month);
+      alerts.fail = true;
+      final id = await repository.addTransaction(draft(50));
+      expect((await repository.listTransactions()).single.id, id);
+      expect(await (await database.database).query('alert_history'), isEmpty);
+
+      alerts.fail = false;
+      await repository.updateTransaction(id, draft(50));
+      expect(alerts.thresholds, [50]);
+    },
+  );
+
+  test(
+    'monthly and annual reports include leap day and exclude the next midnight',
+    () async {
+      for (final (date, amount) in [
+        (DateTime(2023, 12, 31, 23, 59, 59, 999, 999), 1),
+        (DateTime(2024), 2),
+        (DateTime(2024, 2, 29, 23, 59, 59, 999, 999), 4),
+        (DateTime(2024, 3), 8),
+      ]) {
+        await repository.addTransaction(
+          TransactionDraft(
+            type: RecordType.expense,
+            occurredAt: date,
+            amount: amount,
+            categoryId: 1,
+            paymentMethodId: 1,
+          ),
+        );
+      }
+      final january = await repository.getReport(DateTime(2024));
+      expect(january.totalExpense, 2);
+      expect(january.previousMonthExpense, 1);
+      final february = await repository.getReport(DateTime(2024, 2));
+      expect(february.dailyAmounts.single.date, DateTime(2024, 2, 29));
+      expect(february.totalExpense, 4);
+      expect((await repository.getAnnualSummary(2024)).monthlyTotals.take(3), [
+        2,
+        4,
+        8,
+      ]);
+    },
+  );
+
+  test(
+    'successive backups and CSV exports keep their original files',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'spending_exports_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final backup = BackupService(database, exportDirectory: directory);
+      final firstBackup = await backup.createJsonBackup();
+      final firstCsv = await backup.createCsvExport();
+      await repository.addTransaction(draft(1234));
+      final secondBackup = await backup.createJsonBackup();
+      final secondCsv = await backup.createCsvExport();
+
+      expect(firstBackup.path, isNot(secondBackup.path));
+      expect(firstCsv.path, isNot(secondCsv.path));
+      expect(
+        (jsonDecode(await firstBackup.readAsString()) as Map)['transactions'],
+        isEmpty,
+      );
+      expect(await firstCsv.readAsString(), isNot(contains('1234')));
+      expect(await secondCsv.readAsString(), contains('1234'));
+    },
+  );
+
+  test(
+    'concurrent requests create one period and carry budgets forward once',
+    () async {
+      await repository.setBudget(categoryId: 1, amount: 100, anchor: month);
+      final nextMonth = DateTime(month.year, month.month + 1);
+      final periods = await Future.wait([
+        for (var i = 0; i < 3; i++) repository.ensureBudgetPeriod(nextMonth),
+      ]);
+      expect(periods.map((period) => period.id).toSet(), hasLength(1));
+      final report = await repository.getReport(nextMonth);
+      expect(report.remainingBudget, 100);
+    },
+  );
+
+  test(
+    'remaining budget agrees with home when a spent category is hidden',
+    () async {
+      await repository.setBudget(categoryId: 1, amount: 10000, anchor: month);
+      await repository.addTransaction(draft(2500, category: 2));
+      await repository.setCategoryActive(2, false);
+      final home = await repository.getHomeSummary(month);
+      final report = await repository.getReport(month);
+      expect(home.monthlyExpense.amount, 2500);
+      expect(report.totalExpense, home.monthlyExpense.amount);
+      expect(report.remainingBudget, 7500);
+    },
+  );
+
+  test(
+    'restore rejects invalid transaction dates and noninteger amounts',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'spending_exports_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final backup = BackupService(database, exportDirectory: directory);
+      await repository.addTransaction(draft(1234));
+      final file = await backup.createJsonBackup();
+      final data = jsonDecode(await file.readAsString()) as Map;
+      final record = (data['transactions'] as List).single as Map;
+      for (final invalid in [
+        {...record, 'occurred_at': '2026-invalid'},
+        {...record, 'amount': 10.5},
+      ]) {
+        data['transactions'] = [invalid];
+        await expectLater(
+          backup.restoreJson(utf8.encode(jsonEncode(data))),
+          throwsFormatException,
+        );
+        expect((await repository.listTransactions()).single.amount, 1234);
+      }
     },
   );
 }

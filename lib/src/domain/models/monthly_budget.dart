@@ -20,4 +20,7 @@ class BudgetPeriod {
   final int id;
   final DateTime startDate;
   final DateTime endDate;
+
+  DateTime get endExclusive =>
+      DateTime(endDate.year, endDate.month, endDate.day + 1);
 }

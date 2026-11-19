@@ -31,9 +31,11 @@ class BackupService {
       'schemaVersion': schemaVersion,
       'exportedAt': DateTime.now().toIso8601String(),
     };
-    for (final table in _tables) {
-      data[table] = await _rowsForExport(db, table);
-    }
+    await db.transaction((txn) async {
+      for (final table in _tables) {
+        data[table] = await _rowsForExport(txn, table);
+      }
+    });
     // A deleted original expense is excluded from backups; detach its refunds.
     final transactions = data['transactions']! as List<Map<String, Object?>>;
     final includedIds = transactions.map((row) => row['id']).toSet();
@@ -126,9 +128,20 @@ class BackupService {
           if (row is! Map) {
             throw FormatException('$table 데이터 형식이 잘못됐습니다.');
           }
+          final values = Map<String, Object?>.from(row);
+          if (table == 'transactions') {
+            final date = values['occurred_at'];
+            final amount = values['amount'];
+            if (date is! String ||
+                DateTime.tryParse(date) == null ||
+                amount is! int ||
+                amount <= 0) {
+              throw const FormatException('거래 날짜 또는 금액이 올바르지 않습니다.');
+            }
+          }
           await txn.insert(
             table,
-            Map<String, Object?>.from(row),
+            values,
             conflictAlgorithm: ConflictAlgorithm.abort,
           );
         }
@@ -143,7 +156,10 @@ class BackupService {
     await SettingsStore().setFirstRecordHintPending(false);
   }
 
-  Future<List<Map<String, Object?>>> _rowsForExport(Database db, String table) {
+  Future<List<Map<String, Object?>>> _rowsForExport(
+    DatabaseExecutor db,
+    String table,
+  ) {
     if (table == 'transactions') {
       return db.query(table, where: 'deleted_at IS NULL');
     }
@@ -154,7 +170,7 @@ class BackupService {
     final now = DateTime.now();
     String two(int value) => value.toString().padLeft(2, '0');
     return '${now.year}${two(now.month)}${two(now.day)}_'
-        '${two(now.hour)}${two(now.minute)}';
+        '${two(now.hour)}${two(now.minute)}${two(now.second)}_${now.microsecondsSinceEpoch}';
   }
 
   String _csvCell(Object? value) {

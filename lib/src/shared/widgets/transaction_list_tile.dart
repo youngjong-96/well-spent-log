@@ -61,53 +61,63 @@ class TransactionListTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            formatWon(record.signedAmount, signed: true),
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: amountColor,
-              fontWeight: FontWeight.w600,
-            ),
+      trailing: LayoutBuilder(
+        builder: (context, constraints) => ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    formatWon(record.signedAmount, signed: true),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: amountColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              if (onDelete != null || onEdit != null)
+                PopupMenuButton<String>(
+                  tooltip: '내역 메뉴',
+                  onSelected: (action) {
+                    if (action == 'edit') {
+                      onEdit?.call();
+                    }
+                    if (action == 'delete') {
+                      onDelete?.call();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    if (onEdit != null)
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_outlined),
+                            SizedBox(width: 8),
+                            Text('수정'),
+                          ],
+                        ),
+                      ),
+                    if (onDelete != null)
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline),
+                            SizedBox(width: 8),
+                            Text('삭제'),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+            ],
           ),
-          if (onDelete != null || onEdit != null)
-            PopupMenuButton<String>(
-              tooltip: '내역 메뉴',
-              onSelected: (action) {
-                if (action == 'edit') {
-                  onEdit?.call();
-                }
-                if (action == 'delete') {
-                  onDelete?.call();
-                }
-              },
-              itemBuilder: (context) => [
-                if (onEdit != null)
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit_outlined),
-                        SizedBox(width: 8),
-                        Text('수정'),
-                      ],
-                    ),
-                  ),
-                if (onDelete != null)
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline),
-                        SizedBox(width: 8),
-                        Text('삭제'),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-        ],
+        ),
       ),
     );
   }

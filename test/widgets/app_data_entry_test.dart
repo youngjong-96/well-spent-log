@@ -65,6 +65,115 @@ void main() {
     expect(edits, 1);
   });
 
+  testWidgets('large expense leaves room for the title and menu', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 640);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final record = TransactionRecord(
+      id: 1,
+      type: RecordType.expense,
+      occurredAt: DateTime(2026, 1, 1),
+      amount: 9223372036854775807,
+      memo: '점심 식사',
+    );
+    var edited = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TransactionListTile(
+            record: record,
+            onEdit: () => edited = true,
+          ),
+        ),
+      ),
+    );
+    final title = tester.getRect(find.text(record.memo));
+    final amount = tester.getRect(find.text('-9,223,372,036,854,775,807원'));
+    expect(title.width, greaterThan(0));
+    expect(title.right, lessThanOrEqualTo(amount.left));
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('수정'));
+    expect(edited, isTrue);
+  });
+
+  testWidgets('quick amount does not wrap a max-int input into a negative', (
+    tester,
+  ) async {
+    final repository = _FakeSpendingRepository();
+    addTearDown(repository.dispose);
+    await _openExpenseForm(
+      tester,
+      repository: repository,
+      theme: AppTheme.light,
+    );
+    const amount = '9,223,372,036,854,775,807';
+    await tester.enterText(find.byType(TextFormField).first, amount);
+    final quickAdd = find.widgetWithText(OutlinedButton, '+1,000');
+    await tester.ensureVisible(quickAdd);
+    await tester.tap(quickAdd);
+    expect(find.text(amount), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'restored transaction dates outside the standard range remain editable',
+    (tester) async {
+      final repository = _FakeSpendingRepository();
+      addTearDown(repository.dispose);
+      final oldDate = DateTime(1999, 12, 31);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [financeRepositoryProvider.overrideWithValue(repository)],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => TransactionFormSheet.edit(
+                    context,
+                    TransactionRecord(
+                      id: 1,
+                      type: RecordType.expense,
+                      occurredAt: oldDate,
+                      amount: 1000,
+                      memo: '이전 지출',
+                      categoryId: 9,
+                      paymentMethodId: 1,
+                    ),
+                  ),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final date = find.widgetWithText(ListTile, '날짜');
+      await tester.scrollUntilVisible(
+        date,
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(date);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<DatePickerDialog>(find.byType(DatePickerDialog))
+            .initialDate,
+        oldDate,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('edit form prefills record and updates instead of adding', (
     tester,
   ) async {

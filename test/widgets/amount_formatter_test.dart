@@ -44,4 +44,14 @@ void main() {
       '-1,234',
     );
   });
+
+  test('amounts keep every digit at the signed 64-bit limits', () {
+    const max = 9223372036854775807;
+    const min = -9223372036854775808;
+    expect(formatAmount(max), '9,223,372,036,854,775,807');
+    expect(formatWon(min), '-9,223,372,036,854,775,808원');
+    expect(parseAmount(formatAmount(max)), max);
+    expect(parseAmount(formatAmount(min)), min);
+    expect(parseAmount('9223372036854775808'), isNull);
+  });
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -96,6 +97,161 @@ void main() {
     await tester.tap(find.text('표로 보기').first);
     await tester.pumpAndSettle();
     expect(find.text(formatWon(10000)), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final (width, scale) in [
+    (320.0, 1.5),
+    (360.0, 1.3),
+    (384.0, 1.3),
+    (800.0, 1.5),
+  ]) {
+    testWidgets('date axes fit at $width dp and scale $scale', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = Size(width, 2400);
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            reportProvider.overrideWith(
+              (ref, month) async => ReportSummary(
+                totalExpense: 0,
+                previousMonthExpense: 0,
+                remainingBudget: 0,
+                period: BudgetPeriodRange(
+                  startDate: month,
+                  endDate: DateTime(month.year, month.month + 1, 0),
+                ),
+                budgetUsages: const [],
+                dailyAmounts: const [],
+                paymentMethodAmounts: const [],
+                transactions: const [],
+              ),
+            ),
+            annualReportProvider.overrideWith(
+              (ref, year) async => AnnualSummary(
+                year: year,
+                monthlyTotals: List.filled(12, 0),
+                categoryTotals: const [],
+                categoryTrends: [
+                  CategoryAnnualTrend(
+                    name: '식비',
+                    colorHex: '#84B6E2',
+                    monthlyAmounts: List.filled(12, 0),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: const Scaffold(body: ReportScreen()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      void verifyTicks(String first, String last) {
+        final ticks = find.byWidgetPredicate(
+          (widget) =>
+              widget is Text &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'report-date-tick-',
+              ),
+        );
+        final elements = ticks.evaluate().toList();
+        expect(elements.length, greaterThanOrEqualTo(2));
+        expect((elements.first.widget as Text).data, first);
+        expect((elements.last.widget as Text).data, last);
+        Rect? previous;
+        for (final element in elements) {
+          final text = element.widget as Text;
+          expect(text.maxLines, 1);
+          expect(text.softWrap, isFalse);
+          final paragraph = tester.renderObject<RenderParagraph>(
+            find.byWidget(text),
+          );
+          expect(paragraph.didExceedMaxLines, isFalse);
+          final bounds = tester.getRect(find.byWidget(text));
+          expect(bounds.left, greaterThanOrEqualTo(0));
+          expect(bounds.right, lessThanOrEqualTo(width));
+          if (previous != null) {
+            expect(bounds.left, greaterThan(previous.right));
+          }
+          previous = bounds;
+        }
+        expect(tester.takeException(), isNull);
+      }
+
+      await tester.tap(find.text('차트 보기').first);
+      await tester.pumpAndSettle();
+      final now = DateTime.now();
+      verifyTicks(
+        '${now.month}/1',
+        '${now.month}/${DateTime(now.year, now.month + 1, 0).day}',
+      );
+      await tester.tap(find.text('연간'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('차트 보기').first);
+      await tester.pumpAndSettle();
+      verifyTicks('1월', '12월');
+      await tester.tap(find.text('표로 보기').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('차트 보기').last);
+      await tester.pumpAndSettle();
+      verifyTicks('1월', '12월');
+    });
+  }
+
+  testWidgets('refunds are drawn below the zero line', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(384, 1800);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          reportProvider.overrideWith(
+            (ref, month) async => ReportSummary(
+              totalExpense: 50,
+              previousMonthExpense: -50,
+              remainingBudget: 0,
+              period: BudgetPeriodRange(
+                startDate: month,
+                endDate: DateTime(month.year, month.month + 1, 0),
+              ),
+              budgetUsages: const [],
+              dailyAmounts: [
+                DailyAmount(date: month, amount: 100),
+                DailyAmount(
+                  date: DateTime(month.year, month.month, 2),
+                  amount: -50,
+                ),
+              ],
+              paymentMethodAmounts: const [],
+              transactions: const [],
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: const Scaffold(body: ReportScreen()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('200% 증가'), findsOneWidget);
+    await tester.tap(find.text('차트 보기'));
+    await tester.pumpAndSettle();
+    final positive = tester.getRect(find.byKey(const ValueKey('report-bar-0')));
+    final negative = tester.getRect(find.byKey(const ValueKey('report-bar-1')));
+    expect(negative.top, closeTo(positive.bottom, 0.01));
+    expect(negative.height, closeTo(positive.height / 2, 0.01));
     expect(tester.takeException(), isNull);
   });
 }

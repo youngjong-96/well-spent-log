@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:well_spent_log/src/app/theme/app_theme.dart';
 import 'package:well_spent_log/src/application/providers.dart';
 import 'package:well_spent_log/src/features/calendar/calendar_screen.dart';
+import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 import 'package:well_spent_log/src/shared/formatters.dart';
 
 void main() {
@@ -75,6 +76,43 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, '오늘'));
     await tester.pumpAndSettle();
     expect(find.text(formatMonth(currentMonth)), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('calendar cells fit expenses at 320 dp with large text', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 640);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final month = DateTime(2024, 2);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          monthTransactionsProvider.overrideWith(
+            (ref, _) async => [
+              TransactionRecord(
+                id: 1,
+                type: RecordType.expense,
+                occurredAt: month,
+                amount: 10,
+                memo: '',
+                categoryColorHex: '#84B6E2',
+              ),
+            ],
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(body: CalendarScreen(month: month)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('10'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 }
