@@ -21,11 +21,7 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell> {
   int _selectedIndex = 0;
   bool _onboardingDismissed = false;
-  bool _completion = false;
   bool _hintDismissed = false;
-  int? _coachCategoryId;
-  int _coachTotal = 8;
-  final _budgetCoachKey = GlobalKey();
   final _fabCoachKey = GlobalKey();
   late final TransactionsScreenController _transactionsController;
 
@@ -84,49 +80,14 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
     if (!_onboardingDismissed && onboarding.value == true) {
       return OnboardingScreen(
-        onFinished: (categoryId, total) {
-          setState(() {
-            _onboardingDismissed = true;
-            _coachCategoryId = categoryId;
-            _coachTotal = total;
-          });
+        onFinished: () {
+          setState(() => _onboardingDismissed = true);
           ref.invalidate(firstRecordHintProvider);
         },
       );
     }
-    if (_completion) {
-      return Scaffold(
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Icon(Icons.check_circle_outline, size: 80),
-                const SizedBox(height: 24),
-                Text(
-                  '첫 기록 완료!',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineLarge,
-                ),
-                const SizedBox(height: 40),
-                FilledButton(
-                  onPressed: () => setState(() => _completion = false),
-                  child: const Text('홈으로'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
     final screens = [
-      HomeScreen(
-        onOpenCategoryDetails: _openCategoryDetails,
-        coachCategoryId: _coachCategoryId,
-        coachTargetKey: _budgetCoachKey,
-      ),
+      HomeScreen(onOpenCategoryDetails: _openCategoryDetails),
       TransactionsScreen(controller: _transactionsController),
       const ReportScreen(),
       const ManageScreen(),
@@ -180,17 +141,6 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       ),
     );
-    if (_coachCategoryId != null) {
-      return CoachMark(
-        target: _budgetCoachKey,
-        current: _coachTotal,
-        total: _coachTotal,
-        title: '기록하면 예산이 바로 줄어들어요',
-        onNext: _completeCoach,
-        onSkip: _completeCoach,
-        child: shell,
-      );
-    }
     final hint = ref.watch(firstRecordHintProvider).value ?? false;
     if (hint && !_hintDismissed) {
       return CoachMark(
@@ -205,11 +155,6 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
     return shell;
   }
-
-  void _completeCoach() => setState(() {
-    _coachCategoryId = null;
-    _completion = true;
-  });
 
   void _dismissHint() {
     setState(() => _hintDismissed = true);

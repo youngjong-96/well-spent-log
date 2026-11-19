@@ -18,7 +18,7 @@ import 'package:well_spent_log/src/domain/models/transaction_draft.dart';
 import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 import 'package:well_spent_log/src/features/manage/manage_screen.dart';
 import 'package:well_spent_log/src/features/onboarding/onboarding_screen.dart';
-import 'package:well_spent_log/src/features/onboarding/coach_mark.dart';
+import 'package:well_spent_log/src/features/onboarding/first_record_tour.dart';
 import 'package:well_spent_log/src/features/transaction/transaction_form_sheet.dart';
 
 void main() {
@@ -46,7 +46,7 @@ void main() {
   });
 
   Future<void> mount(WidgetTester tester, Widget child) async {
-    tester.view.physicalSize = const Size(430, 932);
+    tester.view.physicalSize = const Size(384, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -64,7 +64,7 @@ void main() {
 
   testWidgets('신규 사용자만 시작 화면을 표시한다', (tester) async {
     await mount(tester, const AppShell());
-    expect(find.text('쓰면 바로 기록하자!'), findsOneWidget);
+    expect(find.text('쓰면 바로\n기록하자!'), findsOneWidget);
     expect(find.text('백업에서 복원하기'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsNothing);
   });
@@ -109,7 +109,7 @@ void main() {
       find.byKey(const ValueKey('onboarding-introduction')),
       findsOneWidget,
     );
-    expect(find.text('지출을 어떤 종류로 나눌지 정해요'), findsOneWidget);
+    expect(find.text('지출을 종류별로\n나눠요'), findsOneWidget);
     await tester.tap(find.text('시작'));
     await settle(tester);
     expect(find.text('나만의 분류'), findsOneWidget);
@@ -117,137 +117,99 @@ void main() {
     expect(find.byType(OutlinedButton), findsWidgets);
   });
 
-  for (final replay in [false, true]) {
-    testWidgets('네 단계 소개와 동일 크기 선택 격자를 표시한다 (다시 보기 $replay)', (tester) async {
-      await tester.runAsync(
-        () => repository.addCategory(
-          name: '아주 긴 이름으로 직접 추가한 카테고리',
-          colorHex: '#84B6E2',
-        ),
-      );
-      await mount(
-        tester,
-        OnboardingScreen(replay: replay, onFinished: (_, _) {}),
-      );
-      await tester.tap(find.text('시작하기'));
-      await settle(tester);
-      const descriptions = [
-        '지출을 어떤 종류로 나눌지 정해요',
-        '카테고리별 한 달 예산을 정해요',
-        '자주 쓰는 카드와 페이를 등록해요',
-        '실제로 지출 하나를 기록해봐요',
-      ];
-      for (var step = 1; step <= 4; step++) {
-        expect(
-          find.byKey(const ValueKey('onboarding-introduction')),
-          findsOneWidget,
-          reason:
-              'step $step: ${tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).join(', ')}',
-        );
-        expect(find.text('$step/4'), findsOneWidget);
-        expect(find.text(descriptions[step - 1]), findsOneWidget);
-        expect(find.byType(TransactionFormSheet), findsNothing);
-        await tester.tap(find.text('시작'));
-        await settle(tester);
-        expect(
-          find.byKey(const ValueKey('onboarding-introduction')),
-          findsNothing,
-        );
-        if (step == 1 || step == 3) {
-          final buttons = find.byType(OutlinedButton).evaluate().toList();
-          final sizes = buttons
-              .map((e) => tester.getSize(find.byWidget(e.widget)))
-              .toList();
-          expect(sizes.every((size) => size == sizes.first), isTrue);
-          expect(sizes.first.height, 72);
-          expect(sizes.first.width, 190);
-          final first = tester.getTopLeft(find.byWidget(buttons[0].widget));
-          final second = tester.getTopLeft(find.byWidget(buttons[1].widget));
-          if (step == 1) {
-            expect(first.dy, second.dy);
-            expect(first.dx, lessThan(second.dx));
-          }
-        }
-        if (step == 2) {
-          final fields = find.byType(TextField).evaluate().toList();
-          final sizes = fields
-              .map((e) => tester.getSize(find.byWidget(e.widget)))
-              .toList();
-          expect(sizes.every((size) => size == sizes.first), isTrue);
-          expect(sizes.first.height, 72);
-        }
-        if (step < 4) {
-          await tester.tap(find.widgetWithText(FilledButton, '다음'));
-          await settle(tester);
-          if (step == 2) {
-            for (
-              var attempt = 0;
-              attempt < 10 &&
-                  find
-                      .byKey(const ValueKey('onboarding-introduction'))
-                      .evaluate()
-                      .isEmpty;
-              attempt++
-            ) {
-              await settle(tester);
-            }
-          }
-        }
-      }
-      expect(find.byType(TransactionFormSheet), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
+  Future<void> tapLabel(WidgetTester tester, String label) async {
+    final target = find.text(label).last;
+    await tester.ensureVisible(target);
+    await tester.tap(target);
+    await settle(tester);
   }
 
-  testWidgets('입력과 선택은 안내를 유지하고 다음 버튼만 위에서 아래로 진행한다', (tester) async {
-    await mount(
-      tester,
-      const Scaffold(body: TransactionFormSheet(onboarding: true)),
-    );
-    final titles = [
-      '사용한 금액을 입력해 보세요',
-      '금액을 빠르게 더하세요',
-      '어디에 썼는지 적어두세요',
-      '지난번 선택을 기억해요',
-      '필요하면 여기서 바꿔요',
-      '다음 할 일을 버튼이 알려줘요',
-      '저장하면 첫 기록 완료!',
+  Future<void> reachTour(WidgetTester tester, {bool setBudget = false}) async {
+    await tapLabel(tester, '시작하기');
+    const titles = [
+      '지출을 종류별로\n나눠요',
+      '한 달에 쓸\n예산을 정해요',
+      '자주 쓰는\n결제수단을 골라요',
+      '첫 지출을\n기록해 봐요',
     ];
-    await tester.enterText(find.byType(TextFormField).first, '15000');
-    await settle(tester);
-    expect(find.text('1 / 8'), findsOneWidget);
-    final amountTop = tester.getTopLeft(find.byType(TextFormField).first).dy;
-    final quickTop = tester.getTopLeft(find.text('+1,000')).dy;
-    final memoTop = tester.getTopLeft(find.byType(TextFormField).at(1)).dy;
-    expect(amountTop, lessThan(quickTop));
-    expect(quickTop, lessThan(memoTop));
+    for (var step = 1; step <= 4; step++) {
+      expect(
+        find.byKey(const ValueKey('onboarding-introduction')),
+        findsOneWidget,
+        reason: '단계 $step',
+      );
+      expect(find.text('$step/4'), findsOneWidget);
+      expect(find.text(titles[step - 1]), findsOneWidget);
+      await tapLabel(tester, '시작');
+      switch (step) {
+        case 1:
+          final food = find.byKey(const ValueKey('onboarding-chip-식비'));
+          final cafe = find.byKey(const ValueKey('onboarding-chip-카페·간식'));
+          expect(tester.getSize(food), tester.getSize(cafe));
+          expect(tester.getSize(food).height, 55);
+          expect(tester.getTopLeft(food).dy, tester.getTopLeft(cafe).dy);
+          await tapLabel(tester, '다음');
+        case 2:
+          if (setBudget) {
+            final field = find.byType(TextField);
+            expect(field, findsOneWidget);
+            await tester.enterText(field, '100000');
+            await tapLabel(tester, '+1만');
+            expect(find.text('110,000'), findsOneWidget);
+            await tapLabel(tester, '다음');
+          } else {
+            await tapLabel(tester, '건너뛰기');
+          }
+        case 3:
+          const methods = ['현금', '신용카드', '모바일티머니', '국민카드', '네이버페이'];
+          final chips = find.byWidgetPredicate(
+            (widget) => widget.key.toString().contains('onboarding-chip-'),
+          );
+          expect(chips, findsNWidgets(5));
+          for (final method in methods) {
+            expect(find.text(method), findsOneWidget);
+          }
+          expect(find.text('카드 번호 없이 이름만 저장해요'), findsOneWidget);
+          expect(find.text('내가 원하는 대로 결제수단을 등록해요'), findsOneWidget);
+          await tapLabel(tester, '국민카드');
+          await tapLabel(tester, '다음');
+      }
+    }
+  }
+
+  Future<void> finishTour(WidgetTester tester) async {
+    const titles = [
+      '사용한 금액을 입력해요',
+      '어디에 썼는지 메모해요',
+      '기록 정보를 한눈에 확인해요',
+      '필요하면 상세 정보를 바꿔요',
+      '확인했다면 저장해요',
+    ];
     for (var i = 0; i < titles.length; i++) {
       expect(find.text(titles[i]), findsOneWidget);
-      expect(find.text('${i + 1} / 8'), findsOneWidget);
-      if (i == 1) {
-        await tester.ensureVisible(find.text('+1,000'));
-        await tester.tap(find.text('+1,000'));
-      }
-      if (i == 2) {
-        await tester.enterText(find.byType(TextFormField).at(1), '점심');
-      }
-      if (i == 3) {
-        await tester.tap(find.byKey(const ValueKey('transaction-summary')));
-      }
+      expect(find.text('${i + 1}/5'), findsOneWidget);
+      expect(find.byType(EditableText), findsNothing);
+      expect(find.text('건너뛰기'), findsNothing);
+      expect(find.text('빠른 불러오기'), findsNothing);
+      expect(find.text('15,000'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('tour-details')),
+        i < 3 ? findsNothing : findsOneWidget,
+      );
       if (i == 4) {
-        await tester.ensureVisible(find.text('어제'));
-        await tester.tap(find.text('어제'));
+        await tester.tapAt(tester.getCenter(find.text('저장')));
+        await tester.pump();
+        expect(find.text('5/5'), findsOneWidget);
       }
-      await settle(tester);
-      expect(find.text('${i + 1} / 8'), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, '다음'));
-      await settle(tester);
+      await tapLabel(tester, '다음');
     }
-    expect(find.byType(CoachMark), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+    expect(find.byType(FirstRecordTour), findsNothing);
+    expect(find.text('이제 직접\n기록해 봐요'), findsOneWidget);
+    final records = await tester.runAsync(() => repository.listTransactions());
+    expect(records, isEmpty);
+  }
 
-  testWidgets('템플릿은 첫 안내이고 불러와도 다음을 눌러야 진행한다', (tester) async {
+  testWidgets('다섯 단계 읽기 전용 투어를 거쳐 실제 저장과 홈 예산을 확인한다', (tester) async {
     await tester.runAsync(() async {
       await repository.addTemplate(
         name: '점심 식사',
@@ -256,106 +218,67 @@ void main() {
         paymentMethodId: (await repository.listPaymentMethods()).first.id,
       );
     });
-    await mount(
-      tester,
-      const Scaffold(body: TransactionFormSheet(onboarding: true)),
-    );
-    expect(find.text('1 / 9'), findsOneWidget);
-    expect(tester.widget<CoachMark>(find.byType(CoachMark)).title, '빠른 불러오기');
-    await tester.tap(find.text('점심 식사'));
-    await settle(tester);
-    expect(find.text('1 / 9'), findsOneWidget);
-    expect(find.text('12,000'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, '다음'));
-    await settle(tester);
-    expect(find.text('2 / 9'), findsOneWidget);
-    expect(find.text('사용한 금액을 입력해 보세요'), findsOneWidget);
-  });
-
-  testWidgets('첫 기록 저장 후 실제 홈 예산 안내와 완료 화면을 표시한다', (tester) async {
     await mount(tester, const AppShell());
-    await tester.tap(find.text('시작하기'));
-    await settle(tester);
-    await tester.tap(find.text('시작'));
-    await settle(tester);
-    await tester.tap(find.widgetWithText(FilledButton, '다음'));
-    await settle(tester);
-    await tester.tap(find.text('시작'));
-    await settle(tester);
-    await tester.tap(find.text('나중에 할게요'));
-    await settle(tester);
-    await tester.tap(find.text('시작'));
-    await settle(tester);
-    await tester.tap(find.widgetWithText(FilledButton, '다음'));
-    await settle(tester);
-    await tester.tap(find.text('시작'));
-    await settle(tester);
+    await reachTour(tester, setBudget: true);
+    await finishTour(tester);
+    await tapLabel(tester, '직접 기록하기');
     expect(find.byType(TransactionFormSheet), findsOneWidget);
-    await tester.tap(find.text('건너뛰기'));
+    expect(find.text('사용한 금액을 자유롭게 기록해 보세요.'), findsOneWidget);
+    expect(find.text('점심 김치찌개'), findsNothing);
+    expect(find.text('빠른 불러오기'), findsNothing);
+    expect(find.text('15,000'), findsNothing);
+
     await tester.enterText(find.byType(TextFormField).first, '5000');
-    await tester.tap(find.widgetWithText(FilledButton, '저장'));
-    await settle(tester);
-    expect(find.text('기록하면 예산이 바로 줄어들어요'), findsOneWidget);
-    expect(find.text('8 / 8'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, '다음'));
-    await settle(tester);
+    await tester.enterText(find.byType(TextFormField).last, '실제 점심');
+    await tapLabel(tester, '분류·결제 접기');
+    expect(find.text('카테고리'), findsNothing);
+    await tapLabel(tester, '분류·결제 확인');
+    expect(find.text('카테고리'), findsOneWidget);
+    expect(find.text('기록 저장 완료'), findsNothing);
+
+    await tapLabel(tester, '저장');
+    expect(find.text('기록 저장 완료'), findsOneWidget);
+    expect(find.text('105,000원 남음'), findsOneWidget);
+    expect(find.text('실제 점심'), findsOneWidget);
+    expect(
+      find.text('저장한 식비 기록이 예산에 반영됐어요. 이 카드에서 남은 금액을 확인해요.'),
+      findsOneWidget,
+    );
+    await tapLabel(tester, '확인');
     expect(find.text('첫 기록 완료!'), findsOneWidget);
-    await tester.tap(find.text('홈으로'));
-    await settle(tester);
+    await tapLabel(tester, '홈으로');
     expect(find.byType(FloatingActionButton), findsOneWidget);
     final records = await tester.runAsync(() => repository.listTransactions());
     expect(records!.single.amount, 5000);
+    expect(records.single.memo, '실제 점심');
     expect(await SettingsStore().getOnboardingCompleted(), isTrue);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('첫 기록을 생략하면 홈 + 안내를 한 번 보여준다', (tester) async {
     await mount(tester, const AppShell());
-    await tester.tap(find.text('시작하기'));
-    await settle(tester);
-    await tester.tap(find.text('시작'));
-    await settle(tester);
-    await tester.tap(find.widgetWithText(FilledButton, '다음'));
-    await settle(tester);
-    await tester.tap(find.text('시작'));
-    await settle(tester);
-    await tester.tap(find.text('나중에 할게요'));
-    await settle(tester);
-    await tester.tap(find.text('시작'));
-    await settle(tester);
-    await tester.tap(find.widgetWithText(FilledButton, '다음'));
-    await settle(tester);
-    await tester.tap(find.text('시작'));
-    await settle(tester);
-    await tester.tap(find.text('오늘은 아직 안 썼어요').last);
-    await settle(tester);
+    await reachTour(tester);
+    await finishTour(tester);
+    await tapLabel(tester, '오늘은 아직 안 썼어요');
     expect(find.text('+ 버튼으로 첫 기록을 남겨보세요'), findsOneWidget);
-    await tester.tap(find.text('건너뛰기'));
-    await settle(tester);
+    await tapLabel(tester, '건너뛰기');
     expect(find.text('+ 버튼으로 첫 기록을 남겨보세요'), findsNothing);
     expect(await SettingsStore().getOnboardingCompleted(), isTrue);
     expect(await SettingsStore().getFirstRecordHintPending(), isFalse);
-    final records = await tester.runAsync(() => repository.listTransactions());
-    expect(records, isEmpty);
   });
 
-  testWidgets('좁은 화면의 키패드 위에서도 말풍선과 금액 입력칸이 겹치지 않는다', (tester) async {
+  testWidgets('작은 화면에서도 상세 안내와 다음 버튼이 겹치지 않는다', (tester) async {
     await mount(
       tester,
-      const Scaffold(body: TransactionFormSheet(onboarding: true)),
+      Scaffold(body: FirstRecordTour(step: 4, onNext: () {})),
     );
-    tester.view.physicalSize = const Size(360, 800);
-    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
-    addTearDown(tester.view.resetViewInsets);
+    tester.view.physicalSize = const Size(320, 610);
     await settle(tester);
-    final coach = find.byType(CoachMark);
-    final bubble = find.widgetWithText(Material, '사용한 금액을 입력해 보세요').first;
-    final bubbleRect = tester.getRect(bubble);
-    expect(bubbleRect.bottom, lessThanOrEqualTo(480));
-    expect(
-      bubbleRect.overlaps(tester.getRect(find.byType(TextFormField).first)),
-      isFalse,
-    );
-    expect(tester.getSize(coach).height, lessThanOrEqualTo(480));
+    final note = tester.getRect(find.text('카테고리, 결제수단, 사용한 날짜를 바꿀 수 있어요.'));
+    final details = tester.getRect(find.byKey(const ValueKey('tour-details')));
+    final next = tester.getRect(find.text('다음'));
+    expect(note.top, greaterThan(details.bottom));
+    expect(note.bottom, lessThan(next.top));
     expect(tester.takeException(), isNull);
   });
 

@@ -33,7 +33,7 @@ class ManageScreen extends StatelessWidget {
                 MaterialPageRoute<void>(
                   builder: (routeContext) => OnboardingScreen(
                     replay: true,
-                    onFinished: (_, _) => Navigator.pop(routeContext),
+                    onFinished: () => Navigator.pop(routeContext),
                   ),
                 ),
               ),

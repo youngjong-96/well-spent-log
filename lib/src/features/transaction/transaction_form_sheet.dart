@@ -8,19 +8,22 @@ import '../../domain/models/payment_method.dart';
 import '../../domain/models/transaction_draft.dart';
 import '../../domain/models/transaction_record.dart';
 import '../../shared/formatters.dart';
-import '../onboarding/coach_mark.dart';
+import '../onboarding/first_record_tour.dart';
+import '../onboarding/onboarding_style.dart';
 
 class TransactionFormSheet extends ConsumerStatefulWidget {
   const TransactionFormSheet({
     this.record,
     this.onboarding = false,
-    this.onboardingReplay = false,
+    this.onOnboardingSaved,
+    this.onOnboardingClose,
     super.key,
   });
 
   final TransactionRecord? record;
   final bool onboarding;
-  final bool onboardingReplay;
+  final ValueChanged<int>? onOnboardingSaved;
+  final VoidCallback? onOnboardingClose;
 
   static Future<int?> edit(
     BuildContext context,
@@ -127,95 +130,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
   bool _reviewing = false;
   double _keyboardInset = 0;
   bool get _editingMemo => _memoFocus.hasFocus;
-  final _quickAmountKey = GlobalKey();
-  final _actionsKey = GlobalKey();
-  final _summaryKey = GlobalKey();
-  final _confirmationKey = GlobalKey();
-  final _templatesKey = GlobalKey();
-  final _saveKey = GlobalKey();
-  final _memoCoachKey = GlobalKey();
-  final _paymentCoachKey = GlobalKey();
-  final _dateCoachKey = GlobalKey();
-  int _coachStep = 0;
-  bool _coachSkipped = false;
-  bool _hasTemplates = false;
-
-  // Matches the vertical layout, with quick loading first when available.
-  List<int> get _coachOrder => [if (_hasTemplates) 6, 0, 1, 3, 4, 5, 2, 7];
-  int get _coachKind => _coachOrder[_coachStep];
-
-  void _nextCoach() {
-    if (!mounted) return;
-    setState(() {
-      _coachStep++;
-      if (_coachStep >= _coachOrder.length) _coachSkipped = true;
-    });
-    if (_coachSkipped) return;
-    if (_coachKind == 3 || _coachKind == 4) {
-      _focusMemo();
-    } else if (_coachKind == 5 || _coachKind == 2 || _coachKind == 7) {
-      _dismissKeyboard();
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _coachSkipped) return;
-      final target = _coachTarget.currentContext;
-      if (target != null) {
-        Scrollable.ensureVisible(
-          target,
-          alignment: .1,
-          duration: const Duration(milliseconds: 200),
-        );
-      }
-    });
-  }
-
-  GlobalKey get _coachTarget => switch (_coachKind) {
-    0 => _amountKey,
-    1 => _quickAmountKey,
-    2 => _actionsKey,
-    3 => _memoCoachKey,
-    4 => _summaryKey,
-    5 => _confirmationKey,
-    6 => _templatesKey,
-    _ => _saveKey,
-  };
-
-  Widget _withCoach(Widget child) {
-    if (!widget.onboarding || _coachSkipped) return child;
-    const titles = [
-      '사용한 금액을 입력해 보세요',
-      '금액을 빠르게 더하세요',
-      '다음 할 일을 버튼이 알려줘요',
-      '어디에 썼는지 적어두세요',
-      '지난번 선택을 기억해요',
-      '필요하면 여기서 바꿔요',
-      '빠른 불러오기',
-      '저장하면 첫 기록 완료!',
-    ];
-    const descriptions = [
-      '숫자 키패드로 바로 입력돼요',
-      '',
-      '더 고칠 게 없으면 바로 저장해도 돼요',
-      '메모를 남기면 나중에 돌아보기 쉬워요',
-      '',
-      '분류·결제수단·날짜를 확인해 주세요',
-      '자주 쓰는 지출을 한 번에 불러와요',
-      '',
-    ];
-    return CoachMark(
-      target: _coachTarget,
-      additionalTargets: _coachKind == 5
-          ? [_paymentCoachKey, _dateCoachKey]
-          : const [],
-      title: titles[_coachKind],
-      description: descriptions[_coachKind],
-      current: _coachStep + 1,
-      total: _hasTemplates ? 9 : 8,
-      onNext: _nextCoach,
-      onSkip: () => setState(() => _coachSkipped = true),
-      child: child,
-    );
-  }
+  bool _onboardingDetails = true;
 
   @override
   void initState() {
@@ -286,7 +201,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
               paymentMethodIds.contains(record.paymentMethodId),
         )
         .toList();
-    _hasTemplates = templates.isNotEmpty;
+
     final lastSelection = await repository.getLastExpenseSelection();
     if (widget.record != null) {
       // Keep the original selections, including archived options.
@@ -312,7 +227,9 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
       top: false,
       child: Padding(
         padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
+          bottom: widget.onboarding
+              ? 0
+              : MediaQuery.viewInsetsOf(context).bottom,
         ),
         child: FutureBuilder<_FormOptions>(
           future: _optionsFuture,
@@ -348,6 +265,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
               );
             }
             final options = snapshot.data!;
+            if (widget.onboarding) return _buildOnboardingForm(options);
             return DraggableScrollableSheet(
               expand: false,
               initialChildSize: 0.92,
@@ -375,16 +293,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                       ).textTheme.headlineMedium,
                                     ),
                                   ),
-                                  if (widget.onboarding)
-                                    TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(context, -1),
-                                      child: Text(
-                                        widget.onboardingReplay
-                                            ? '첫 기록 건너뛰기'
-                                            : '오늘은 아직 안 썼어요',
-                                      ),
-                                    ),
                                   IconButton(
                                     tooltip: '닫기',
                                     onPressed: () => Navigator.pop(context),
@@ -431,16 +339,11 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                 },
                               ),
                               const SizedBox(height: 12),
-                              if (widget.onboarding) ...[
-                                _quickAmounts(),
-                                const SizedBox(height: 12),
-                              ],
                               Column(
                                 key: _memoSectionKey,
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   TextFormField(
-                                    key: _memoCoachKey,
                                     controller: _memoController,
                                     focusNode: _memoFocus,
                                     maxLength: 80,
@@ -455,18 +358,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                       ),
                                     ),
                                   ),
-                                  if (!widget.onboarding) ...[
-                                    const SizedBox(height: 8),
-                                    _quickAmounts(),
-                                  ],
-                                  if (_editingMemo ||
-                                      (widget.onboarding &&
-                                          !_coachSkipped &&
-                                          _coachKind == 4)) ...[
+                                  const SizedBox(height: 8),
+                                  _quickAmounts(),
+                                  if (_editingMemo) ...[
                                     const SizedBox(height: 12),
                                     TextFieldTapRegion(
                                       child: Material(
-                                        key: _summaryKey,
                                         color: Theme.of(
                                           context,
                                         ).colorScheme.surfaceContainerHighest,
@@ -518,7 +415,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                 const SizedBox(height: 16),
                                 DropdownButtonFormField<int>(
                                   isExpanded: true,
-                                  key: _confirmationKey,
                                   focusNode: _categoryFocus,
                                   initialValue: _categoryId,
                                   decoration: const InputDecoration(
@@ -547,7 +443,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                 DropdownButtonFormField<int>(
                                   isExpanded: true,
                                   focusNode: _paymentFocus,
-                                  key: _paymentCoachKey,
                                   initialValue: _paymentMethodId,
                                   decoration: const InputDecoration(
                                     labelText: '결제수단',
@@ -610,7 +505,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                               ],
                               const SizedBox(height: 12),
                               Focus(
-                                key: _dateCoachKey,
                                 focusNode: _dateFocus,
                                 child: ListenableBuilder(
                                   listenable: _dateFocus,
@@ -693,12 +587,8 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                           child: TextFieldTapRegion(
                             child: Row(
-                              key: _actionsKey,
                               children: [
-                                if (!_reviewing ||
-                                    (widget.onboarding &&
-                                        !_coachSkipped &&
-                                        _coachKind == 2)) ...[
+                                if (!_reviewing) ...[
                                   Expanded(
                                     flex: 3,
                                     child: OutlinedButton.icon(
@@ -729,7 +619,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                                 Expanded(
                                   flex: 2,
                                   child: FilledButton.icon(
-                                    key: _saveKey,
                                     onPressed: _saving
                                         ? null
                                         : () => _save(options),
@@ -755,7 +644,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
                     ],
                   ),
                 );
-                return _withCoach(form);
+                return form;
               },
             );
           },
@@ -766,7 +655,6 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
 
   Widget _quickAmounts() => TextFieldTapRegion(
     child: Row(
-      key: _quickAmountKey,
       children: [
         for (final amount in [1000, 5000, 10000]) ...[
           Expanded(
@@ -784,24 +672,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
   Widget _quickLoadOptions(_FormOptions options) {
     Widget choice(String name, IconData icon, VoidCallback onPressed) {
       final label = Text(name, maxLines: 1, overflow: TextOverflow.ellipsis);
-      if (!widget.onboarding) {
-        return Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: ActionChip(
-            avatar: Icon(icon, size: 18),
-            label: label,
-            onPressed: onPressed,
-          ),
-        );
-      }
-      return OutlinedButton(
-        onPressed: onPressed,
-        child: Row(
-          children: [
-            Icon(icon, size: 18),
-            const SizedBox(width: 8),
-            Expanded(child: label),
-          ],
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ActionChip(
+          avatar: Icon(icon, size: 18),
+          label: label,
+          onPressed: onPressed,
         ),
       );
     }
@@ -820,28 +696,235 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
           () => _applyRecent(record),
         ),
     ];
-    if (!widget.onboarding) {
-      return SingleChildScrollView(
-        key: _templatesKey,
-        scrollDirection: Axis.horizontal,
-        child: Row(children: children),
-      );
-    }
-    return LayoutBuilder(
-      key: _templatesKey,
-      builder: (context, constraints) => Wrap(
-        spacing: 10,
-        runSpacing: 10,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: children),
+    );
+  }
+
+  Widget _buildOnboardingForm(_FormOptions options) {
+    final category = options.categories
+        .where((item) => item.id == _categoryId)
+        .firstOrNull;
+    final method = options.methods
+        .where((item) => item.id == _paymentMethodId)
+        .firstOrNull;
+    final now = DateTime.now();
+    final dateLabel = DateUtils.isSameDay(now, _date)
+        ? '오늘 · ${_date.month}월 ${_date.day}일'
+        : formatShortDate(_date);
+    void toggleDetails() =>
+        setState(() => _onboardingDetails = !_onboardingDetails);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        firstRecordHeader(live: true),
+        Expanded(
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              color: onboardingSurface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          firstRecordSheetTitle(
+                            onClose: _saving ? null : widget.onOnboardingClose,
+                          ),
+                          const SizedBox(height: 11),
+                          firstRecordField(
+                            '금액',
+                            TextFormField(
+                              key: _amountKey,
+                              controller: _amountController,
+                              focusNode: _amountFocus,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [const AmountInputFormatter()],
+                              style: onboardingType(34, bold: true),
+                              decoration: InputDecoration(
+                                hintText: '0',
+                                hintStyle: onboardingType(
+                                  34,
+                                  color: onboardingMuted,
+                                  bold: true,
+                                ),
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                                border: InputBorder.none,
+                              ),
+                              onTapOutside: (_) => _dismissKeyboard(),
+                              validator: (text) =>
+                                  (parseAmount(text ?? '') ?? 0) <= 0
+                                  ? '금액을 입력해 주세요.'
+                                  : null,
+                            ),
+                            height: 80,
+                            trailing: const Text('원'),
+                          ),
+                          const SizedBox(height: 11),
+                          firstRecordField(
+                            '어떤 지출인가요?',
+                            TextFormField(
+                              key: _memoSectionKey,
+                              controller: _memoController,
+                              focusNode: _memoFocus,
+                              maxLength: 80,
+                              style: onboardingType(20, bold: true),
+                              decoration: InputDecoration(
+                                hintText: '예: 친구와 점심',
+                                hintStyle: onboardingType(
+                                  20,
+                                  color: onboardingMuted,
+                                  bold: true,
+                                ),
+                                counterText: '',
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                                border: InputBorder.none,
+                              ),
+                              textInputAction: TextInputAction.done,
+                              onTapOutside: (_) => _dismissKeyboard(),
+                            ),
+                            height: 72,
+                            trailing: const Icon(Icons.edit, size: 20),
+                          ),
+                          const SizedBox(height: 11),
+                          firstRecordSummary(
+                            _selectionSummary(options),
+                            _onboardingDetails,
+                            onTap: toggleDetails,
+                          ),
+                          if (_onboardingDetails) ...[
+                            const SizedBox(height: 11),
+                            firstRecordType(
+                              _isRefund,
+                              onChanged: (value) =>
+                                  setState(() => _isRefund = value),
+                            ),
+                            const SizedBox(height: 6),
+                            firstRecordDetail(
+                              '카테고리',
+                              category?.name ?? '카테고리 선택',
+                              Icons.expand_more,
+                              onTap: () =>
+                                  _selectOnboardingOption('카테고리', _categoryId, {
+                                    for (final item in options.categories)
+                                      item.id: item.name,
+                                  }, (id) => _categoryId = id),
+                            ),
+                            const SizedBox(height: 6),
+                            firstRecordDetail(
+                              '결제수단',
+                              method?.name ?? '결제수단 선택',
+                              Icons.expand_more,
+                              onTap: () => _selectOnboardingOption(
+                                '결제수단',
+                                _paymentMethodId,
+                                {
+                                  for (final item in options.methods)
+                                    item.id: item.name,
+                                },
+                                (id) => _paymentMethodId = id,
+                              ),
+                            ),
+                            if (_isRefund &&
+                                options.recentExpenses.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              firstRecordDetail(
+                                '원 지출 연결',
+                                _refundedExpenseId == null ? '선택 안 함' : '연결됨',
+                                Icons.expand_more,
+                                onTap: () => _selectOnboardingOption(
+                                  '원 지출 연결',
+                                  _refundedExpenseId ?? 0,
+                                  {
+                                    0: '선택 안 함',
+                                    for (final item in options.recentExpenses)
+                                      item.id:
+                                          '${item.memo.isEmpty ? item.categoryName : item.memo} · ${formatWon(item.amount)}',
+                                  },
+                                  (id) =>
+                                      _refundedExpenseId = id == 0 ? null : id,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 6),
+                            firstRecordDetail(
+                              '날짜',
+                              dateLabel,
+                              Icons.chevron_right,
+                              onTap: _pickDate,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 128,
+                          child: onboardingButton(
+                            _onboardingDetails ? '분류·결제 접기' : '분류·결제 확인',
+                            toggleDetails,
+                            secondary: true,
+                            icon: _onboardingDetails
+                                ? Icons.expand_less
+                                : Icons.expand_more,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 100,
+                          child: onboardingButton(
+                            _saving ? '저장 중' : '저장',
+                            _saving ? null : () => _save(options),
+                            icon: Icons.check,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _selectOnboardingOption(
+    String label,
+    int? selected,
+    Map<int, String> choices,
+    ValueChanged<int> apply,
+  ) async {
+    _dismissKeyboard();
+    final id = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(label),
         children: [
-          for (final child in children)
-            SizedBox(
-              width: (constraints.maxWidth - 10) / 2,
-              height: 72,
-              child: child,
+          for (final choice in choices.entries)
+            ListTile(
+              title: Text(choice.value),
+              trailing: choice.key == selected ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(context, choice.key),
             ),
         ],
       ),
     );
+    if (mounted && id != null) setState(() => apply(id));
   }
 
   void _applyTemplate(ExpenseTemplate template) {
@@ -978,7 +1061,15 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
   }
 
   Future<void> _save(_FormOptions options) async {
-    if (!_formKey.currentState!.validate()) {
+    if (_saving || !_formKey.currentState!.validate()) {
+      return;
+    }
+    if (widget.onboarding &&
+        (_categoryId == null || _paymentMethodId == null)) {
+      setState(() => _onboardingDetails = true);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('카테고리와 결제수단을 선택해 주세요.')));
       return;
     }
     final amount = parseAmount(_amountController.text)!;
@@ -1002,7 +1093,12 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
         id = await repository.addTransaction(draft);
       }
       if (mounted) {
-        Navigator.pop(context, id);
+        final onSaved = widget.onOnboardingSaved;
+        if (onSaved != null) {
+          onSaved(id);
+        } else {
+          Navigator.pop(context, id);
+        }
       }
     } catch (_) {
       if (mounted) {
