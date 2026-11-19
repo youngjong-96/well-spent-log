@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../application/providers.dart';
+import '../onboarding/onboarding_screen.dart';
 
 class ManageScreen extends StatelessWidget {
   const ManageScreen({super.key});
@@ -24,6 +25,19 @@ class ManageScreen extends StatelessWidget {
           children: [
             const _SectionLabel('화면'),
             const _ThemeModeTile(),
+            ListTile(
+              leading: const Icon(Icons.school_outlined),
+              title: const Text('온보딩 다시 보기'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (routeContext) => OnboardingScreen(
+                    replay: true,
+                    onFinished: () => Navigator.pop(routeContext),
+                  ),
+                ),
+              ),
+            ),
             const Divider(height: 32),
             const _SectionLabel('예산과 기록'),
             _ManageTile(

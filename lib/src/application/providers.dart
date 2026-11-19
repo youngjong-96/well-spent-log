@@ -157,3 +157,15 @@ final annualReportProvider = FutureProvider.family<AnnualSummary, int>((
   ref.watch(dataRevisionProvider);
   return ref.watch(financeRepositoryProvider).getAnnualSummary(year);
 });
+
+final onboardingNeededProvider = FutureProvider<bool>((ref) async {
+  await ref.watch(appInitializationProvider.future);
+  return !await ref.read(settingsStoreProvider).getOnboardingCompleted();
+});
+
+final firstRecordHintProvider = FutureProvider<bool>((ref) async {
+  final settings = ref.watch(settingsStoreProvider);
+  final pending = await settings.getFirstRecordHintPending();
+  if (pending) await settings.setFirstRecordHintPending(false);
+  return pending;
+});

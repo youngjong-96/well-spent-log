@@ -8,6 +8,8 @@ import '../features/report/report_screen.dart';
 import '../features/transaction/transaction_form_sheet.dart';
 import '../features/transactions/transactions_screen.dart';
 import '../shared/widgets/quick_entry_fab.dart';
+import '../features/onboarding/onboarding_screen.dart';
+import '../features/onboarding/coach_mark.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -18,6 +20,9 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int _selectedIndex = 0;
+  bool _onboardingDismissed = false;
+  bool _hintDismissed = false;
+  final _fabCoachKey = GlobalKey();
   late final TransactionsScreenController _transactionsController;
 
   @override
@@ -59,18 +64,41 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       );
     }
+    final onboarding = ref.watch(onboardingNeededProvider);
+    if (!_onboardingDismissed && onboarding.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (!_onboardingDismissed && onboarding.hasError) {
+      return Scaffold(
+        body: Center(
+          child: TextButton(
+            onPressed: () => ref.invalidate(onboardingNeededProvider),
+            child: const Text('다시 시도'),
+          ),
+        ),
+      );
+    }
+    if (!_onboardingDismissed && onboarding.value == true) {
+      return OnboardingScreen(
+        onFinished: () {
+          setState(() => _onboardingDismissed = true);
+          ref.invalidate(firstRecordHintProvider);
+        },
+      );
+    }
     final screens = [
       HomeScreen(onOpenCategoryDetails: _openCategoryDetails),
       TransactionsScreen(controller: _transactionsController),
       const ReportScreen(),
       const ManageScreen(),
     ];
-    return Scaffold(
+    final shell = Scaffold(
       extendBody: true,
       body: SafeArea(
         child: IndexedStack(index: _selectedIndex, children: screens),
       ),
       floatingActionButton: QuickEntryFab(
+        key: _fabCoachKey,
         onPressed: () => _showExpenseSheet(context),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
@@ -113,6 +141,23 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       ),
     );
+    final hint = ref.watch(firstRecordHintProvider).value ?? false;
+    if (hint && !_hintDismissed) {
+      return CoachMark(
+        target: _fabCoachKey,
+        current: 1,
+        total: 1,
+        title: '+ 버튼으로 첫 기록을 남겨보세요',
+        onNext: _dismissHint,
+        onSkip: _dismissHint,
+        child: shell,
+      );
+    }
+    return shell;
+  }
+
+  void _dismissHint() {
+    setState(() => _hintDismissed = true);
   }
 
   void _selectTab(int index) {
@@ -125,6 +170,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   Future<void> _showExpenseSheet(BuildContext context) async {
+    _dismissHint();
     final transactionId = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,

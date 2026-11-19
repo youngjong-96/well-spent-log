@@ -20,6 +20,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final Set<int> _amountCategoryIds = {};
+  final _budgetScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _budgetScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,6 +107,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: SizedBox(
                       height: 220,
                       child: ListView.separated(
+                        controller: _budgetScrollController,
                         scrollDirection: Axis.horizontal,
                         itemCount: data.budgetUsages.length,
                         separatorBuilder: (context, index) =>

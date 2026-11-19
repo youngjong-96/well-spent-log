@@ -1,6 +1,27 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsStore {
+  Future<bool> getOnboardingCompleted() async =>
+      (await _preferences).getBool('onboarding_completed') ?? false;
+
+  Future<void> setOnboardingCompleted() async {
+    if (!await (await _preferences).setBool('onboarding_completed', true)) {
+      throw StateError('Could not save onboarding completion.');
+    }
+  }
+
+  Future<bool> getFirstRecordHintPending() async =>
+      (await _preferences).getBool('first_record_hint_pending') ?? false;
+
+  Future<void> setFirstRecordHintPending(bool value) async {
+    if (!await (await _preferences).setBool(
+      'first_record_hint_pending',
+      value,
+    )) {
+      throw StateError('Could not save first record hint.');
+    }
+  }
+
   static const _weeklyTotalsVisibleKey = 'weekly_totals_visible';
   static const _lastCategoryIdKey = 'last_category_id';
   static const _lastPaymentMethodIdKey = 'last_payment_method_id';

@@ -11,7 +11,9 @@ import '../../application/providers.dart';
 enum _CsvExportFormat { csv, zip }
 
 class BackupScreen extends ConsumerStatefulWidget {
-  const BackupScreen({super.key});
+  const BackupScreen({this.onRestored, super.key});
+
+  final VoidCallback? onRestored;
 
   @override
   ConsumerState<BackupScreen> createState() => _BackupScreenState();
@@ -172,6 +174,9 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       final bytes = await selected.readAsBytes();
       await ref.read(backupServiceProvider).restoreJson(bytes);
       await ref.read(financeRepositoryProvider).refreshAfterRestore();
+      await ref.read(settingsStoreProvider).setOnboardingCompleted();
+      ref.invalidate(onboardingNeededProvider);
+      if (mounted) widget.onRestored?.call();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
