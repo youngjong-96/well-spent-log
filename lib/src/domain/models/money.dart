@@ -1,4 +1,7 @@
-import 'package:intl/intl.dart';
+final _digitGroup = RegExp(r'\d(?=(\d{3})+$)');
+
+String formatGroupedInteger(int amount) =>
+    amount.toString().replaceAllMapped(_digitGroup, (match) => '${match[0]},');
 
 class Money {
   const Money(this.amount);
@@ -6,7 +9,7 @@ class Money {
   final int amount;
 
   String format() {
-    return '${NumberFormat.decimalPattern('ko_KR').format(amount)}원';
+    return '${formatGroupedInteger(amount)}원';
   }
 
   static const zero = Money(0);

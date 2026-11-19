@@ -284,6 +284,9 @@ class _MonthCalendar extends StatelessWidget {
     final firstDayOffset = DateTime(month.year, month.month).weekday % 7;
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
     const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+    final dayStyle = Theme.of(context).textTheme.bodyMedium;
+    final fontSize = dayStyle?.fontSize ?? 14;
+    final scale = MediaQuery.textScalerOf(context).scale(fontSize) / fontSize;
     return Column(
       children: [
         Row(
@@ -312,9 +315,9 @@ class _MonthCalendar extends StatelessWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: ((firstDayOffset + daysInMonth + 6) ~/ 7) * 7,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
-            childAspectRatio: 0.78,
+            childAspectRatio: 0.78 / scale.clamp(1.0, double.infinity),
           ),
           itemBuilder: (context, index) {
             final day = index - firstDayOffset + 1;
@@ -364,24 +367,31 @@ class _MonthCalendar extends StatelessWidget {
                   ),
                   child: Column(
                     children: [
-                      Text(
-                        '$day',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: selected || today
-                              ? FontWeight.w700
-                              : FontWeight.w400,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '$day',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                fontWeight: selected || today
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                              ),
                         ),
                       ),
                       const SizedBox(height: 3),
-                      if (expenseAmount != 0)
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            formatAmount(expenseAmount),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      const Spacer(),
+                      Expanded(
+                        child: expenseAmount == 0
+                            ? const SizedBox.shrink()
+                            : FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.topCenter,
+                                child: Text(
+                                  formatAmount(expenseAmount),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                      ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [

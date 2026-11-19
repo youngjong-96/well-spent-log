@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer';
 
 import 'package:sqflite/sqflite.dart';
 
@@ -305,17 +306,16 @@ class FinanceRepository {
     final range = const CalculateBudgetPeriod()(anchorDate: anchor);
     final start = _dateOnly(range.startDate);
     final end = _dateOnly(range.endDate);
-    final existing = await db.query(
-      'budget_periods',
-      where: 'start_date = ? AND end_date = ?',
-      whereArgs: [start, end],
-      limit: 1,
-    );
-    if (existing.isNotEmpty) {
-      return _periodFromMap(existing.first);
-    }
-    final now = DateTime.now().toIso8601String();
-    final id = await db.transaction<int>((txn) async {
+    return db.transaction((txn) async {
+      final existing = await txn.query(
+        'budget_periods',
+        where: 'start_date = ? AND end_date = ?',
+        whereArgs: [start, end],
+        limit: 1,
+      );
+      if (existing.isNotEmpty) return _periodFromMap(existing.first);
+
+      final now = DateTime.now().toIso8601String();
       final newId = await txn.insert('budget_periods', {
         'start_date': start,
         'end_date': end,
@@ -346,13 +346,12 @@ class FinanceRepository {
           });
         }
       }
-      return newId;
+      return BudgetPeriod(
+        id: newId,
+        startDate: range.startDate,
+        endDate: range.endDate,
+      );
     });
-    return BudgetPeriod(
-      id: id,
-      startDate: range.startDate,
-      endDate: range.endDate,
-    );
   }
 
   Future<void> setBudget({
@@ -561,7 +560,7 @@ class FinanceRepository {
     final db = await _database.database;
     final period = await ensureBudgetPeriod(DateTime(month.year, month.month));
     final start = period.startDate;
-    final end = period.endDate.add(const Duration(days: 1));
+    final end = period.endExclusive;
     final previousStart = DateTime(start.year, start.month - 1);
     final previousRows = await db.rawQuery(
       '''
@@ -622,18 +621,15 @@ class FinanceRepository {
       0,
       (sum, item) => sum + item.budgetAmount.amount,
     );
-    final periodSpent = usages.fold<int>(
-      0,
-      (sum, item) => sum + item.spentAmount.amount,
-    );
+    final totalExpense = _asInt(totalRows.first['expense']);
     final transactions = (await listTransactions(
       start: start,
       endExclusive: end,
     )).toList();
     return ReportSummary(
-      totalExpense: _asInt(totalRows.first['expense']),
+      totalExpense: totalExpense,
       previousMonthExpense: _asInt(previousRows.first['expense']),
-      remainingBudget: totalBudget - periodSpent,
+      remainingBudget: totalBudget - totalExpense,
       period: BudgetPeriodRange(
         startDate: period.startDate,
         endDate: period.endDate,
@@ -758,7 +754,7 @@ class FinanceRepository {
     DatabaseExecutor db,
     BudgetPeriod period,
   ) async {
-    final endExclusive = period.endDate.add(const Duration(days: 1));
+    final endExclusive = period.endExclusive;
     final rows = await db.rawQuery(
       '''
       SELECT c.id AS category_id, c.name AS category_name,
@@ -805,8 +801,10 @@ class FinanceRepository {
   }) async {
     final db = await _database.database;
     final period = await ensureBudgetPeriod(anchor);
-    final rows = await db.rawQuery(
-      '''
+    final pending = await db.transaction((txn) async {
+      final alerts = <(int, String, int)>[];
+      final rows = await txn.rawQuery(
+        '''
       SELECT c.name, COALESCE(mb.amount, 0) AS budget,
         COALESCE(SUM(CASE
           WHEN t.type = 'expense' THEN t.amount
@@ -823,49 +821,60 @@ class FinanceRepository {
       WHERE c.id = ?
       GROUP BY c.id, c.name, mb.amount
       ''',
-      [
-        period.id,
-        period.startDate.toIso8601String(),
-        period.endDate.add(const Duration(days: 1)).toIso8601String(),
-        categoryId,
-      ],
-    );
-    if (rows.isEmpty) {
-      return;
-    }
-    final budget = _asInt(rows.first['budget']);
-    if (budget <= 0) {
-      return;
-    }
-    final ratio = _asInt(rows.first['spent']) / budget * 100;
-    final categoryName = rows.first['name']! as String;
-    for (final threshold in const [50, 80, 100]) {
-      if (ratio >= threshold) {
-        final existing = await db.query(
+        [
+          period.id,
+          period.startDate.toIso8601String(),
+          period.endExclusive.toIso8601String(),
+          categoryId,
+        ],
+      );
+      if (rows.isEmpty) return alerts;
+
+      final budget = BigInt.from(_asInt(rows.first['budget']));
+      final spentPercent =
+          BigInt.from(_asInt(rows.first['spent'])) * BigInt.from(100);
+      final categoryName = rows.first['name']! as String;
+      for (final threshold in const [50, 80, 100]) {
+        const where = 'period_id = ? AND category_id = ? AND threshold = ?';
+        final keys = [period.id, categoryId, threshold];
+        if (budget <= BigInt.zero ||
+            spentPercent < budget * BigInt.from(threshold)) {
+          await txn.delete('alert_history', where: where, whereArgs: keys);
+          continue;
+        }
+
+        final existing = await txn.query(
           'alert_history',
           columns: ['id'],
-          where: 'period_id = ? AND category_id = ? AND threshold = ?',
-          whereArgs: [period.id, categoryId, threshold],
+          where: where,
+          whereArgs: keys,
           limit: 1,
         );
-        if (existing.isEmpty) {
-          await db.insert('alert_history', {
-            'period_id': period.id,
-            'category_id': categoryId,
-            'threshold': threshold,
-            'sent_at': DateTime.now().toIso8601String(),
-          });
-          await _notificationService.showBudgetAlert(
-            id: period.id * 100000 + categoryId * 100 + threshold,
-            categoryName: categoryName,
-            threshold: threshold,
-          );
-        }
-      } else {
-        await db.delete(
-          'alert_history',
-          where: 'period_id = ? AND category_id = ? AND threshold = ?',
-          whereArgs: [period.id, categoryId, threshold],
+        if (existing.isNotEmpty) continue;
+        final id = await txn.insert('alert_history', {
+          'period_id': period.id,
+          'category_id': categoryId,
+          'threshold': threshold,
+          'sent_at': DateTime.now().toIso8601String(),
+        });
+        alerts.add((id, categoryName, threshold));
+      }
+      return alerts;
+    });
+
+    for (final (alertId, categoryName, threshold) in pending) {
+      try {
+        await _notificationService.showBudgetAlert(
+          id: alertId,
+          categoryName: categoryName,
+          threshold: threshold,
+        );
+      } catch (error, stackTrace) {
+        await db.delete('alert_history', where: 'id = ?', whereArgs: [alertId]);
+        log(
+          'Could not show budget alert',
+          error: error,
+          stackTrace: stackTrace,
         );
       }
     }

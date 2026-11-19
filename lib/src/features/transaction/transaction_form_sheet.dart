@@ -939,7 +939,9 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
 
   void _addAmount(int amount) {
     final current = parseAmount(_amountController.text) ?? 0;
-    _amountController.text = formatAmount(current + amount);
+    final total = current + amount;
+    if (total < current) return;
+    _amountController.text = formatAmount(total);
     _amountController.selection = TextSelection.collapsed(
       offset: _amountController.text.length,
     );
@@ -947,8 +949,8 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
 
   void _setRelativeDate(int dayOffset) {
     _dismissKeyboard();
-    final now = DateTime.now().add(Duration(days: dayOffset));
-    setState(() => _date = DateTime(now.year, now.month, now.day));
+    final now = DateTime.now();
+    setState(() => _date = DateTime(now.year, now.month, now.day + dayOffset));
   }
 
   void _applyRecent(TransactionRecord record) {
@@ -963,13 +965,16 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
 
   Future<void> _pickDate() async {
     _dismissKeyboard();
+    final now = DateTime.now();
+    final earliest = DateTime(2000);
+    final latest = DateTime(now.year, now.month, now.day + 365);
     final selected = await showDatePicker(
       context: context,
       initialDate: _date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      firstDate: _date.isBefore(earliest) ? _date : earliest,
+      lastDate: _date.isAfter(latest) ? _date : latest,
     );
-    if (selected != null) {
+    if (selected != null && mounted) {
       setState(() => _date = selected);
     }
   }
@@ -1054,7 +1059,7 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
     final date = DateTime(_date.year, _date.month, _date.day);
     final day = date == today
         ? '오늘'
-        : date == today.subtract(const Duration(days: 1))
+        : date == DateTime(today.year, today.month, today.day - 1)
         ? '어제'
         : formatShortDate(_date);
     return '$category · $method · $day';
