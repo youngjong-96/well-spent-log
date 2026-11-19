@@ -621,131 +621,122 @@ class _BarChart extends StatelessWidget {
     final minValue = values.fold<int>(0, math.min);
     final range = math.max(1.0, maxValue.toDouble() - minValue.toDouble());
     final baseline = minValue == 0 ? 1.0 : maxValue / range;
+    final plot = LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.maxHeight;
+        final zero = height * baseline;
+        final axisColor = Theme.of(context).colorScheme.outlineVariant;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            if (minValue < 0)
+              Positioned(
+                top: zero.clamp(0.0, height - 1),
+                left: 0,
+                right: 0,
+                height: 1,
+                child: ColoredBox(color: axisColor),
+              ),
+            Row(
+              children: [
+                for (var index = 0; index < values.length; index++)
+                  Expanded(
+                    child: Tooltip(
+                      message: '${labels[index]} · ${formatWon(values[index])}',
+                      triggerMode: TooltipTriggerMode.tap,
+                      preferBelow: false,
+                      child: Semantics(
+                        button: true,
+                        label: '${labels[index]} ${formatWon(values[index])}',
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Positioned(
+                              left: 1,
+                              right: 1,
+                              top: values[index] < 0
+                                  ? zero
+                                  : math.max(
+                                      0,
+                                      zero -
+                                          height *
+                                              math.max(
+                                                0.02,
+                                                values[index] / range,
+                                              ),
+                                    ),
+                              bottom: values[index] < 0
+                                  ? math.max(
+                                      0,
+                                      height -
+                                          zero +
+                                          height * (values[index] / range),
+                                    )
+                                  : height - zero,
+                              child: DecoratedBox(
+                                key: ValueKey('report-bar-$index'),
+                                decoration: BoxDecoration(
+                                  color: values[index] == 0 ? axisColor : color,
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(3),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
     return Semantics(
       label:
           '$semanticsLabel, 최대 ${formatWon(maxValue)}, '
           '합계 ${formatWon(values.fold(0, (sum, value) => sum + value))}',
       child: SizedBox(
         height: 184,
-        child: Column(
-          children: [
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final height = constraints.maxHeight;
-                  final zero = height * baseline;
-                  final axisColor = Theme.of(
-                    context,
-                  ).colorScheme.outlineVariant;
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (minValue < 0)
-                        Positioned(
-                          top: zero.clamp(0.0, height - 1),
-                          left: 0,
-                          right: 0,
-                          height: 1,
-                          child: ColoredBox(color: axisColor),
-                        ),
-                      Row(
-                        children: [
-                          for (var index = 0; index < values.length; index++)
-                            Expanded(
-                              child: Tooltip(
-                                message:
-                                    '${labels[index]} · ${formatWon(values[index])}',
-                                triggerMode: TooltipTriggerMode.tap,
-                                preferBelow: false,
-                                child: Semantics(
-                                  button: true,
-                                  label:
-                                      '${labels[index]} ${formatWon(values[index])}',
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Positioned(
-                                        left: 1,
-                                        right: 1,
-                                        top: values[index] < 0
-                                            ? zero
-                                            : math.max(
-                                                0,
-                                                zero -
-                                                    height *
-                                                        math.max(
-                                                          0.02,
-                                                          values[index] / range,
-                                                        ),
-                                              ),
-                                        bottom: values[index] < 0
-                                            ? math.max(
-                                                0,
-                                                height -
-                                                    zero +
-                                                    height *
-                                                        (values[index] / range),
-                                              )
-                                            : height - zero,
-                                        child: DecoratedBox(
-                                          key: ValueKey('report-bar-$index'),
-                                          decoration: BoxDecoration(
-                                            color: values[index] == 0
-                                                ? axisColor
-                                                : color,
-                                            borderRadius:
-                                                const BorderRadius.vertical(
-                                                  top: Radius.circular(3),
-                                                ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 6),
-            if (dateAxis)
-              _DateAxis(labels: labels)
-            else
-              Row(
+        child: dateAxis
+            ? _DateAxis(labels: labels, plot: plot)
+            : Column(
                 children: [
-                  for (var index = 0; index < labels.length; index++)
-                    Expanded(
-                      child: Text(
-                        index == 0 ||
-                                index == labels.length ~/ 2 ||
-                                index == labels.length - 1
-                            ? labels[index]
-                            : '',
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
+                  Expanded(child: plot),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      for (var index = 0; index < labels.length; index++)
+                        Expanded(
+                          child: Text(
+                            index == 0 ||
+                                    index == labels.length ~/ 2 ||
+                                    index == labels.length - 1
+                                ? labels[index]
+                                : '',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
-          ],
-        ),
       ),
     );
   }
 }
 
 class _DateAxis extends StatelessWidget {
-  const _DateAxis({required this.labels});
+  const _DateAxis({required this.labels, required this.plot});
 
   final List<String> labels;
+  final Widget plot;
 
   @override
   Widget build(BuildContext context) {
@@ -768,43 +759,54 @@ class _DateAxis extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        if (width == 0) return SizedBox(height: labelHeight);
         final tickWidth = math.min(width, labelWidth);
-        final step = width / labels.length;
-        final farRight = width - tickWidth;
-        double left(int index) =>
-            (step * (index + 0.5) - tickWidth / 2).clamp(0.0, farRight);
+        // Inset the plot just enough to center even the edge labels on bars.
+        final slotWidth = labels.length == 1
+            ? width
+            : math.min(
+                width / labels.length,
+                (width - tickWidth) / (labels.length - 1),
+              );
+        final inset = (width - slotWidth * labels.length) / 2;
+        final steps = labels.length <= 12
+            ? const [1, 2, 3, 4, 6]
+            : const [2, 5, 7, 10, 14];
+        final tickStep = steps.firstWhere(
+          (step) => step * slotWidth >= tickWidth + 8,
+          orElse: () => labels.length,
+        );
 
-        final last = labels.length - 1;
-        final ticks = [0];
-        for (var index = 1; index < last; index++) {
-          if (left(index) >= left(ticks.last) + tickWidth + 8 &&
-              left(last) >= left(index) + tickWidth + 8) {
-            ticks.add(index);
-          }
-        }
-        if (left(last) >= left(ticks.last) + tickWidth + 8) ticks.add(last);
-
-        return SizedBox(
-          height: labelHeight,
-          child: Stack(
-            children: [
-              for (final index in ticks)
-                Positioned(
-                  left: left(index),
-                  width: tickWidth,
-                  child: Text(
-                    labels[index],
-                    key: ValueKey('report-date-tick-$index'),
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: style,
-                  ),
-                ),
-            ],
-          ),
+        return Column(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: inset),
+                child: plot,
+              ),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: labelHeight,
+              child: Stack(
+                children: [
+                  for (var index = 0; index < labels.length; index += tickStep)
+                    Positioned(
+                      left: inset + slotWidth * (index + 0.5) - tickWidth / 2,
+                      width: tickWidth,
+                      child: Text(
+                        labels[index],
+                        key: ValueKey('report-date-tick-$index'),
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: style,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );
