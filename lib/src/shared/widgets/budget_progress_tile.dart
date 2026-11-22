@@ -31,6 +31,7 @@ class BudgetProgressTile extends StatelessWidget {
             ? scheme.primary
             : colorFromHex(usage.colorHex),
     };
+    final trackColor = progressColor.withValues(alpha: 0.12);
     final valueText = showAmount
         ? '${usage.spentAmount.format()} / ${usage.budgetAmount.format()}'
         : '${usage.usedPercent}%';
@@ -54,7 +55,11 @@ class BudgetProgressTile extends StatelessWidget {
                           width: 10,
                           height: 10,
                           decoration: BoxDecoration(
-                            color: colorFromHex(usage.colorHex),
+                            color: visibleForeground(
+                              colorFromHex(usage.colorHex),
+                              scheme.surface,
+                              scheme.primary,
+                            ),
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -84,8 +89,12 @@ class BudgetProgressTile extends StatelessWidget {
                 label: '${usage.categoryName} 예산 ${usage.usedPercent}% 사용',
                 child: LinearProgressIndicator(
                   value: progress,
-                  color: progressColor,
-                  backgroundColor: progressColor.withValues(alpha: 0.12),
+                  color: visibleForeground(
+                    progressColor,
+                    Color.alphaBlend(trackColor, scheme.surface),
+                    scheme.primary,
+                  ),
+                  backgroundColor: trackColor,
                   minHeight: 8,
                   borderRadius: BorderRadius.circular(4),
                 ),

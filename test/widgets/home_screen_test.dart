@@ -15,6 +15,69 @@ import 'package:well_spent_log/src/shared/widgets/transaction_list_tile.dart';
 void main() {
   setUpAll(() => initializeDateFormatting('ko_KR'));
 
+  for (final brightness in Brightness.values) {
+    for (final hex in [
+      '#D8E8F5',
+      '#84B6E2',
+      '#294761',
+      '#2F6FEB',
+      '#123456',
+      '#ABCDEF',
+    ]) {
+      testWidgets('$brightness budget fill contrasts with the track for $hex', (
+        tester,
+      ) async {
+        final month = DateTime(2026, 11);
+        final summary = HomeSummary(
+          monthlyExpense: const Money(30),
+          month: month,
+          budgetUsages: [
+            BudgetUsage(
+              categoryId: 1,
+              categoryName: 'Test budget',
+              spentAmount: const Money(30),
+              budgetAmount: const Money(100),
+              colorHex: hex,
+            ),
+          ],
+          period: BudgetPeriodRange(
+            startDate: month,
+            endDate: DateTime(2026, 11, 30),
+          ),
+          monthlyTransactions: const [],
+        );
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              homeSummaryProvider.overrideWith((ref) async => summary),
+            ],
+            child: MaterialApp(
+              theme: brightness == Brightness.light
+                  ? AppTheme.light
+                  : AppTheme.dark,
+              home: Scaffold(body: HomeScreen(onOpenCategoryDetails: (_) {})),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final bar = tester.widget<LinearProgressIndicator>(
+          find.descendant(
+            of: find.byType(Card),
+            matching: find.byType(LinearProgressIndicator),
+          ),
+        );
+        expect(bar.value, 0.3);
+        final fill = bar.color!.computeLuminance();
+        final track = bar.backgroundColor!.computeLuminance();
+        final contrast = fill > track
+            ? (fill + 0.05) / (track + 0.05)
+            : (track + 0.05) / (fill + 0.05);
+        expect(contrast, greaterThanOrEqualTo(3));
+      });
+    }
+  }
+
   testWidgets('홈은 요약과 예산만 표시하고 카테고리 내역을 바로 연다', (tester) async {
     tester.view.physicalSize = const Size(430, 1800);
     tester.view.devicePixelRatio = 1;

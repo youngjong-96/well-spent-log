@@ -135,7 +135,7 @@ class CategoryBudgetScreen extends ConsumerWidget {
     SpendingCategory? category,
   ]) async {
     var name = category?.name ?? '';
-    var colorHex = category?.colorHex ?? _swatches.first;
+    var colorHex = category?.colorHex ?? '#84B6E2';
     final result = await showDialog<(String, String)>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -253,8 +253,15 @@ class CategoryBudgetScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed == true) {
+    if (confirmed != true || !context.mounted) return;
+    try {
       await ref.read(financeRepositoryProvider).removeCategory(category.id);
+    } on StateError catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
     }
   }
 }
@@ -282,7 +289,11 @@ class _CategoryBudgetTile extends StatelessWidget {
         width: 18,
         height: 18,
         decoration: BoxDecoration(
-          color: colorFromHex(category.colorHex),
+          color: visibleForeground(
+            colorFromHex(category.colorHex),
+            Theme.of(context).scaffoldBackgroundColor,
+            Theme.of(context).colorScheme.primary,
+          ),
           shape: BoxShape.circle,
         ),
       ),

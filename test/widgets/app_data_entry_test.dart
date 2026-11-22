@@ -21,6 +21,7 @@ import 'package:well_spent_log/src/domain/models/payment_method.dart';
 import 'package:well_spent_log/src/domain/models/transaction_draft.dart';
 import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 import 'package:well_spent_log/src/features/manage/payment_methods_screen.dart';
+import 'package:well_spent_log/src/features/manage/security_screen.dart';
 import 'package:well_spent_log/src/shared/formatters.dart';
 
 void main() {
@@ -28,6 +29,51 @@ void main() {
   sqfliteFfiInit();
 
   setUpAll(() => initializeDateFormatting('ko_KR'));
+
+  testWidgets('PIN settings can retry a secure storage read failure', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [lockServiceProvider.overrideWithValue(_RetryLockService())],
+        child: const MaterialApp(home: SecurityScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('PIN 확인 다시 시도'));
+    await tester.pumpAndSettle();
+    expect(find.text('PIN 설정'), findsOneWidget);
+  });
+
+  testWidgets(
+    'editing offers only active options and the original hidden ones',
+    (tester) async {
+      final repository = _FakeSpendingRepository()..includeHiddenOptions = true;
+      addTearDown(repository.dispose);
+      final record = TransactionRecord(
+        id: 10,
+        type: RecordType.expense,
+        occurredAt: DateTime(2026, 8, 1),
+        amount: 5000,
+        memo: 'Lunch',
+        categoryId: 2,
+        paymentMethodId: 2,
+      );
+      await _openExpenseForm(
+        tester,
+        repository: repository,
+        theme: AppTheme.light,
+        record: record,
+      );
+      final dropdowns = tester
+          .widgetList<DropdownButton<int>>(find.byType(DropdownButton<int>))
+          .toList();
+      expect(dropdowns[0].value, 2);
+      expect(dropdowns[0].items!.map((item) => item.value), [1, 9, 2]);
+      expect(dropdowns[1].value, 2);
+      expect(dropdowns[1].items!.map((item) => item.value), [1, 2]);
+    },
+  );
 
   testWidgets('menu actions invoke edit and delete callbacks', (tester) async {
     var edits = 0;
@@ -564,6 +610,7 @@ Future<void> _openExpenseForm(
   required FinanceRepository repository,
   required ThemeData theme,
   double textScale = 1,
+  TransactionRecord? record,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -585,7 +632,7 @@ Future<void> _openExpenseForm(
                 context: context,
                 isScrollControlled: true,
                 useSafeArea: true,
-                builder: (_) => const TransactionFormSheet(),
+                builder: (_) => TransactionFormSheet(record: record),
               ),
               child: const Text('open'),
             ),
@@ -613,6 +660,17 @@ class _UnlockedLockService extends LockService {
   Future<bool> hasPin() async => false;
 }
 
+class _RetryLockService extends LockService {
+  bool _failed = false;
+
+  @override
+  Future<bool> hasPin() async {
+    if (_failed) return false;
+    _failed = true;
+    throw StateError('Secure storage unavailable');
+  }
+}
+
 class _FakeSpendingRepository extends FinanceRepository {
   _FakeSpendingRepository()
     : super(
@@ -630,6 +688,7 @@ class _FakeSpendingRepository extends FinanceRepository {
   TransactionDraft? updatedDraft;
   final updatedDrafts = <TransactionDraft>[];
   bool failNextSave = false;
+  bool includeHiddenOptions = false;
   @override
   Future<void> updateTransaction(int id, TransactionDraft draft) async {
     updatedId = id;
@@ -647,7 +706,13 @@ class _FakeSpendingRepository extends FinanceRepository {
   @override
   Future<List<PaymentMethod>> listPaymentMethods({
     bool includeInactive = false,
-  }) async => List.of(_methods);
+  }) async => [
+    ..._methods,
+    if (includeInactive && includeHiddenOptions) ...const [
+      PaymentMethod(id: 2, name: 'Original method', isActive: false),
+      PaymentMethod(id: 3, name: 'Other hidden method', isActive: false),
+    ],
+  ];
 
   @override
   Future<void> savePaymentMethod({int? id, required String name}) async {
@@ -666,27 +731,36 @@ class _FakeSpendingRepository extends FinanceRepository {
   Future<List<SpendingCategory>> listCategories({
     bool includeInactive = false,
   }) async {
-    return const [
-      SpendingCategory(
+    return [
+      const SpendingCategory(
         id: 1,
         name: '식비',
         colorHex: '#2F6B5F',
         sortOrder: 0,
         isActive: true,
       ),
-      SpendingCategory(
+      const SpendingCategory(
         id: 9,
         name: '데이트비용',
         colorHex: '#B04A82',
         sortOrder: 8,
         isActive: true,
       ),
+      if (includeInactive && includeHiddenOptions)
+        for (final id in [2, 3])
+          SpendingCategory(
+            id: id,
+            name: 'Hidden category $id',
+            colorHex: '#D8E8F5',
+            sortOrder: id,
+            isActive: false,
+          ),
     ];
   }
 
   @override
   Future<List<ExpenseTemplate>> listTemplates({
-    bool includeInactive = false,
+    bool includeUnavailable = false,
   }) async {
     return const [];
   }

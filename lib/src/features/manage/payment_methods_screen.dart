@@ -133,9 +133,15 @@ class PaymentMethodsScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !context.mounted) return;
     try {
       await ref.read(financeRepositoryProvider).removePaymentMethod(method.id);
+    } on StateError catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(

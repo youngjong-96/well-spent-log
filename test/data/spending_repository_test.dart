@@ -16,14 +16,17 @@ import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 class _Alerts extends NotificationService {
   final thresholds = <int>[];
   bool fail = false;
+  bool allowed = true;
   @override
-  Future<void> showBudgetAlert({
+  Future<bool> showBudgetAlert({
     required int id,
     required String categoryName,
     required int threshold,
   }) async {
     if (fail) throw StateError('Notification unavailable');
+    if (!allowed) return false;
     thresholds.add(threshold);
+    return true;
   }
 }
 
@@ -140,6 +143,12 @@ void main() {
       );
       expect((await repository.listTransactions()).single.id, id);
       expect(await repository.listTemplates(), isEmpty);
+      final unavailable = await repository.listTemplates(
+        includeUnavailable: true,
+      );
+      expect(unavailable.single.name, '커피');
+      await repository.removeTemplate(unavailable.single.id);
+      expect(await repository.listTemplates(includeUnavailable: true), isEmpty);
       await repository.savePaymentMethod(name: '임시');
       final unused = (await repository.listPaymentMethods()).last;
       await repository.removePaymentMethod(unused.id);
@@ -315,6 +324,51 @@ void main() {
       );
       await repository.setBudget(categoryId: 1, amount: budget, anchor: month);
       expect(alerts.thresholds, [50, 50]);
+    },
+  );
+
+  test(
+    'denied notifications leave their threshold eligible for delivery',
+    () async {
+      await repository.setBudget(categoryId: 1, amount: 100, anchor: month);
+      alerts.allowed = false;
+      final id = await repository.addTransaction(draft(50));
+      expect(await (await database.database).query('alert_history'), isEmpty);
+      expect(alerts.thresholds, isEmpty);
+
+      alerts.allowed = true;
+      await repository.updateTransaction(id, draft(50));
+      expect(alerts.thresholds, [50]);
+    },
+  );
+
+  test(
+    'the final active category and payment method cannot be removed',
+    () async {
+      final categories = await repository.listCategories();
+      for (final category in categories.skip(1)) {
+        await repository.removeCategory(category.id);
+      }
+      final methods = await repository.listPaymentMethods();
+      for (final method in methods.skip(1)) {
+        await repository.removePaymentMethod(method.id);
+      }
+      await expectLater(
+        repository.removeCategory(categories.first.id),
+        throwsStateError,
+      );
+      await expectLater(
+        repository.removePaymentMethod(methods.first.id),
+        throwsStateError,
+      );
+      expect(
+        (await repository.listCategories()).single.id,
+        categories.first.id,
+      );
+      expect(
+        (await repository.listPaymentMethods()).single.id,
+        methods.first.id,
+      );
     },
   );
 

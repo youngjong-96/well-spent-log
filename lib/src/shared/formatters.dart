@@ -68,6 +68,19 @@ String formatMonth(DateTime date) {
   return DateFormat('yyyy년 M월', 'ko_KR').format(date);
 }
 
+Color visibleForeground(Color color, Color background, Color fallback) {
+  final foregroundLuminance = color.computeLuminance();
+  final backgroundLuminance = background.computeLuminance();
+  final lighter = foregroundLuminance > backgroundLuminance
+      ? foregroundLuminance
+      : backgroundLuminance;
+  final darker = foregroundLuminance < backgroundLuminance
+      ? foregroundLuminance
+      : backgroundLuminance;
+  // Preserve category colors when they meet 3:1 contrast for graphics.
+  return (lighter + 0.05) / (darker + 0.05) >= 3 ? color : fallback;
+}
+
 Color colorFromHex(String hex) {
   final normalized = hex.replaceFirst('#', '');
   final value = int.tryParse(normalized, radix: 16) ?? 0;

@@ -661,7 +661,11 @@ class _BudgetCategoryCard extends StatelessWidget {
       _ =>
         Theme.of(context).brightness == Brightness.dark
             ? scheme.primary
-            : colorFromHex(usage.colorHex),
+            : visibleForeground(
+                colorFromHex(usage.colorHex),
+                scheme.surfaceContainerHighest,
+                scheme.primary,
+              ),
     };
     final valueText = showAmount
         ? '${usage.spentAmount.format()} / ${usage.budgetAmount.format()}'

@@ -25,6 +25,7 @@ class TransactionListTile extends StatelessWidget {
         : Theme.of(context).brightness == Brightness.dark
         ? scheme.primary
         : colorFromHex(record.categoryColorHex!);
+    final iconBackground = categoryColor.withValues(alpha: 0.12);
     return ListTile(
       minTileHeight: 64,
       onTap: onEdit,
@@ -34,7 +35,7 @@ class TransactionListTile extends StatelessWidget {
         height: 40,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: categoryColor.withValues(alpha: 0.12),
+          color: iconBackground,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(
@@ -42,7 +43,14 @@ class TransactionListTile extends StatelessWidget {
             RecordType.expense => categoryIconFor(record.categoryName),
             RecordType.refund => Icons.replay_outlined,
           },
-          color: categoryColor,
+          color: visibleForeground(
+            categoryColor,
+            Color.alphaBlend(
+              iconBackground,
+              Theme.of(context).scaffoldBackgroundColor,
+            ),
+            scheme.secondary,
+          ),
           semanticLabel: record.type.label,
         ),
       ),

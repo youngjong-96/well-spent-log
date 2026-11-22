@@ -149,9 +149,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Future<void> _finish({bool skipped = false}) => _run(() async {
-    final settings = ref.read(settingsStoreProvider);
-    await settings.setFirstRecordHintPending(skipped && !widget.replay);
-    await settings.setOnboardingCompleted();
+    if (!widget.replay) {
+      final settings = ref.read(settingsStoreProvider);
+      await settings.setFirstRecordHintPending(skipped);
+      await settings.setOnboardingCompleted();
+    }
     if (mounted) widget.onFinished();
   });
 
@@ -214,7 +216,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     await _run(() async {
       await ref
           .read(financeRepositoryProvider)
-          .addCategory(name: name.trim(), colorHex: '#2F6FEB');
+          .addCategory(name: name.trim(), colorHex: '#84B6E2');
       if (mounted) await _reloadSettings();
     });
   }

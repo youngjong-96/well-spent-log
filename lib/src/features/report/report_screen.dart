@@ -315,7 +315,11 @@ class _AnnualReport extends ConsumerWidget {
                     _TableChartView(
                       values: data.categoryTrends[index].monthlyAmounts,
                       labels: List.generate(12, (month) => '${month + 1}월'),
-                      color: colorFromHex(data.categoryTrends[index].colorHex),
+                      color: visibleForeground(
+                        colorFromHex(data.categoryTrends[index].colorHex),
+                        Theme.of(context).scaffoldBackgroundColor,
+                        Theme.of(context).colorScheme.primary,
+                      ),
                       semanticsLabel:
                           '$year년 ${data.categoryTrends[index].name} 월별 지출',
                       dateAxis: true,

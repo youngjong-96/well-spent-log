@@ -13,6 +13,7 @@ class SecurityScreen extends ConsumerStatefulWidget {
 
 class _SecurityScreenState extends ConsumerState<SecurityScreen> {
   late Future<bool> _hasPinFuture;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -31,8 +32,16 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
       body: FutureBuilder<bool>(
         future: _hasPinFuture,
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState != ConnectionState.done || _saving) {
             return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: TextButton(
+                onPressed: () => setState(_reload),
+                child: const Text('PIN 확인 다시 시도'),
+              ),
+            );
           }
           final enabled = snapshot.data!;
           return ListView(
@@ -48,7 +57,7 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
                 leading: const Icon(Icons.pin_outlined),
                 title: Text(enabled ? 'PIN 변경' : 'PIN 설정'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: _setPin,
+                onTap: () => _setPin(enabled),
               ),
               if (enabled)
                 ListTile(
@@ -64,7 +73,11 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
     );
   }
 
-  Future<void> _setPin() async {
+  Future<void> _setPin(bool enabled) async {
+    if (enabled && !await _confirmCurrentPin('PIN을 변경할까요?', '계속')) {
+      return;
+    }
+    if (!mounted) return;
     var pin = '';
     var confirmation = '';
     String? errorText;
@@ -122,20 +135,45 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
         ),
       ),
     );
-    if (result != null) {
-      await ref.read(lockServiceProvider).setPin(result);
-      setState(_reload);
-    }
+    if (result == null || !mounted) return;
+    await _savePin(() => ref.read(lockServiceProvider).setPin(result));
   }
 
   Future<void> _removePin() async {
+    if (!await _confirmCurrentPin('잠금을 해제할까요?', '잠금 해제') || !mounted) {
+      return;
+    }
+    await _savePin(() => ref.read(lockServiceProvider).removePin());
+  }
+
+  Future<void> _savePin(Future<void> Function() save) async {
+    setState(() => _saving = true);
+    try {
+      await save();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('PIN 설정을 저장하지 못했어요.')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _reload();
+        });
+      }
+    }
+  }
+
+  Future<bool> _confirmCurrentPin(String title, String action) async {
     var pin = '';
+    var checking = false;
     String? errorText;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('잠금을 해제할까요?'),
+          title: Text(title),
           content: TextField(
             autofocus: true,
             obscureText: true,
@@ -153,28 +191,33 @@ class _SecurityScreenState extends ConsumerState<SecurityScreen> {
               child: const Text('취소'),
             ),
             FilledButton(
-              onPressed: () async {
-                final valid = await ref
-                    .read(lockServiceProvider)
-                    .verifyPin(pin);
-                if (!context.mounted) {
-                  return;
-                }
-                if (valid) {
-                  Navigator.pop(context, true);
-                } else {
-                  setDialogState(() => errorText = 'PIN이 맞지 않습니다.');
-                }
-              },
-              child: const Text('잠금 해제'),
+              onPressed: checking
+                  ? null
+                  : () async {
+                      setDialogState(() => checking = true);
+                      try {
+                        final valid = await ref
+                            .read(lockServiceProvider)
+                            .verifyPin(pin);
+                        if (!context.mounted) return;
+                        if (valid) {
+                          Navigator.pop(context, true);
+                          return;
+                        }
+                        errorText = 'PIN이 맞지 않습니다.';
+                      } catch (_) {
+                        errorText = 'PIN을 확인하지 못했어요. 다시 시도해 주세요.';
+                      }
+                      if (context.mounted) {
+                        setDialogState(() => checking = false);
+                      }
+                    },
+              child: Text(action),
             ),
           ],
         ),
       ),
     );
-    if (confirmed == true) {
-      await ref.read(lockServiceProvider).removePin();
-      setState(_reload);
-    }
+    return confirmed == true;
   }
 }

@@ -5,7 +5,7 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
-  bool _permissionRequested = false;
+  Future<void>? _permissionRequest;
 
   Future<void> initialize() async {
     if (_initialized || kIsWeb) {
@@ -24,13 +24,24 @@ class NotificationService {
     _initialized = true;
   }
 
-  Future<void> showBudgetAlert({
+  Future<bool> showBudgetAlert({
     required int id,
     required String categoryName,
     required int threshold,
   }) async {
+    if (kIsWeb) return false;
     await initialize();
-    await _requestPermissionOnce();
+    if (!await _hasPermission()) {
+      final request = _permissionRequest ??= _requestPermission();
+      try {
+        await request;
+      } catch (_) {
+        // A platform error does not count as a completed permission request.
+        if (identical(_permissionRequest, request)) _permissionRequest = null;
+        rethrow;
+      }
+      if (!await _hasPermission()) return false;
+    }
     await _plugin.show(
       id: id,
       title: '$categoryName 예산 알림',
@@ -48,13 +59,31 @@ class NotificationService {
         iOS: DarwinNotificationDetails(),
       ),
     );
+    return true;
   }
 
-  Future<void> _requestPermissionOnce() async {
-    if (_permissionRequested || kIsWeb) {
-      return;
-    }
-    _permissionRequested = true;
+  Future<bool> _hasPermission() async {
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android =>
+        await _plugin
+                .resolvePlatformSpecificImplementation<
+                  AndroidFlutterLocalNotificationsPlugin
+                >()
+                ?.areNotificationsEnabled() ==
+            true,
+      TargetPlatform.iOS =>
+        (await _plugin
+                    .resolvePlatformSpecificImplementation<
+                      IOSFlutterLocalNotificationsPlugin
+                    >()
+                    ?.checkPermissions())
+                ?.isEnabled ==
+            true,
+      _ => true,
+    };
+  }
+
+  Future<void> _requestPermission() async {
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         await _plugin

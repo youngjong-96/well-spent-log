@@ -104,18 +104,22 @@ class FinanceRepository {
     return rows.map(PaymentMethod.fromMap).toList();
   }
 
-  Future<List<ExpenseTemplate>> listTemplates() async {
+  Future<List<ExpenseTemplate>> listTemplates({
+    bool includeUnavailable = false,
+  }) async {
     final db = await _database.database;
-    final rows = await db.rawQuery('''
+    final rows = await db.rawQuery(
+      '''
       SELECT et.*
       FROM expense_templates et
       JOIN categories c ON c.id = et.category_id
       JOIN payment_methods pm ON pm.id = et.payment_method_id
       WHERE et.is_active = 1
-        AND c.is_active = 1
-        AND pm.is_active = 1
+        AND (? = 1 OR (c.is_active = 1 AND pm.is_active = 1))
       ORDER BY et.updated_at DESC
-    ''');
+    ''',
+      [includeUnavailable ? 1 : 0],
+    );
     return rows.map(ExpenseTemplate.fromMap).toList();
   }
 
@@ -459,25 +463,36 @@ class FinanceRepository {
 
   Future<void> removeCategory(int id) async {
     final db = await _database.database;
-    final references = await db.rawQuery(
-      '''
-      SELECT
-        (SELECT COUNT(*) FROM transactions WHERE category_id = ?) +
-        (SELECT COUNT(*) FROM monthly_budgets WHERE category_id = ?) +
-        (SELECT COUNT(*) FROM expense_templates WHERE category_id = ?) AS count
-      ''',
-      [id, id, id],
-    );
-    if (_asInt(references.first['count']) > 0) {
-      await db.update(
+    await db.transaction((txn) async {
+      final active = await txn.query(
         'categories',
-        {'is_active': 0, 'updated_at': DateTime.now().toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [id],
+        columns: ['id'],
+        where: 'is_active = 1',
+        limit: 2,
       );
-    } else {
-      await db.delete('categories', where: 'id = ?', whereArgs: [id]);
-    }
+      if (active.length == 1 && active.single['id'] == id) {
+        throw StateError('최소 1개 카테고리를 유지해 주세요.');
+      }
+      final references = await txn.rawQuery(
+        '''
+        SELECT
+          (SELECT COUNT(*) FROM transactions WHERE category_id = ?) +
+          (SELECT COUNT(*) FROM monthly_budgets WHERE category_id = ?) +
+          (SELECT COUNT(*) FROM expense_templates WHERE category_id = ?) AS count
+        ''',
+        [id, id, id],
+      );
+      if (_asInt(references.first['count']) > 0) {
+        await txn.update(
+          'categories',
+          {'is_active': 0, 'updated_at': DateTime.now().toIso8601String()},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      } else {
+        await txn.delete('categories', where: 'id = ?', whereArgs: [id]);
+      }
+    });
     _notifyChanged();
   }
 
@@ -508,25 +523,36 @@ class FinanceRepository {
 
   Future<void> removePaymentMethod(int id) async {
     final db = await _database.database;
-    final references = await db.rawQuery(
-      '''
-      SELECT
-        (SELECT COUNT(*) FROM transactions WHERE payment_method_id = ?) +
-        (SELECT COUNT(*) FROM expense_templates WHERE payment_method_id = ?)
-        AS count
-      ''',
-      [id, id],
-    );
-    if (_asInt(references.first['count']) > 0) {
-      await db.update(
+    await db.transaction((txn) async {
+      final active = await txn.query(
         'payment_methods',
-        {'is_active': 0, 'updated_at': DateTime.now().toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [id],
+        columns: ['id'],
+        where: 'is_active = 1',
+        limit: 2,
       );
-    } else {
-      await db.delete('payment_methods', where: 'id = ?', whereArgs: [id]);
-    }
+      if (active.length == 1 && active.single['id'] == id) {
+        throw StateError('최소 1개 결제수단를 유지해 주세요.');
+      }
+      final references = await txn.rawQuery(
+        '''
+        SELECT
+          (SELECT COUNT(*) FROM transactions WHERE payment_method_id = ?) +
+          (SELECT COUNT(*) FROM expense_templates WHERE payment_method_id = ?)
+          AS count
+        ''',
+        [id, id],
+      );
+      if (_asInt(references.first['count']) > 0) {
+        await txn.update(
+          'payment_methods',
+          {'is_active': 0, 'updated_at': DateTime.now().toIso8601String()},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      } else {
+        await txn.delete('payment_methods', where: 'id = ?', whereArgs: [id]);
+      }
+    });
     _notifyChanged();
   }
 
@@ -864,11 +890,18 @@ class FinanceRepository {
 
     for (final (alertId, categoryName, threshold) in pending) {
       try {
-        await _notificationService.showBudgetAlert(
+        final shown = await _notificationService.showBudgetAlert(
           id: alertId,
           categoryName: categoryName,
           threshold: threshold,
         );
+        if (!shown) {
+          await db.delete(
+            'alert_history',
+            where: 'id = ?',
+            whereArgs: [alertId],
+          );
+        }
       } catch (error, stackTrace) {
         await db.delete('alert_history', where: 'id = ?', whereArgs: [alertId]);
         log(

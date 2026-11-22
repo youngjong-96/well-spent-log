@@ -124,7 +124,9 @@ final paymentMethodsProvider = FutureProvider<List<PaymentMethod>>((ref) async {
 
 final templatesProvider = FutureProvider<List<ExpenseTemplate>>((ref) async {
   ref.watch(dataRevisionProvider);
-  return ref.watch(financeRepositoryProvider).listTemplates();
+  return ref
+      .watch(financeRepositoryProvider)
+      .listTemplates(includeUnavailable: true);
 });
 
 final monthTransactionsProvider =
