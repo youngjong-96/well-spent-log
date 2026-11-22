@@ -1,3 +1,12 @@
+String normalizeCategoryName(String name) => name.trim().toLowerCase();
+
+class HiddenCategory {
+  const HiddenCategory(this.category, this.transactionCount);
+
+  final SpendingCategory category;
+  final int transactionCount;
+}
+
 class SpendingCategory {
   const SpendingCategory({
     required this.id,

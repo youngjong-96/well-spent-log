@@ -19,6 +19,10 @@ import '../local/app_database.dart';
 import '../services/notification_service.dart';
 import '../settings/settings_store.dart';
 
+class DuplicateActiveCategoryName implements Exception {
+  const DuplicateActiveCategoryName();
+}
+
 class FinanceRepository {
   FinanceRepository({
     required AppDatabase database,
@@ -90,6 +94,35 @@ class FinanceRepository {
       orderBy: 'sort_order, id',
     );
     return rows.map(SpendingCategory.fromMap).toList();
+  }
+
+  Future<List<HiddenCategory>> listHiddenCategories() async {
+    final db = await _database.database;
+    final rows = await db.rawQuery('''
+      SELECT c.*, (
+        SELECT COUNT(*) FROM transactions t
+        WHERE t.category_id = c.id AND t.deleted_at IS NULL
+      ) AS transaction_count
+      FROM categories c
+      WHERE c.is_active = 0
+      ORDER BY c.updated_at DESC, c.id DESC
+      ''');
+    return [
+      for (final row in rows)
+        HiddenCategory(
+          SpendingCategory.fromMap(row),
+          _asInt(row['transaction_count']),
+        ),
+    ];
+  }
+
+  Future<HiddenCategory?> findHiddenCategoryByName(String name) async {
+    final normalized = normalizeCategoryName(name);
+    return (await listHiddenCategories())
+        .where(
+          (item) => normalizeCategoryName(item.category.name) == normalized,
+        )
+        .firstOrNull;
   }
 
   Future<List<PaymentMethod>> listPaymentMethods({
@@ -383,24 +416,47 @@ class FinanceRepository {
     _notifyChanged();
   }
 
+  Future<void> _checkActiveCategoryName(
+    DatabaseExecutor db,
+    String name, {
+    int? excludingId,
+  }) async {
+    final normalized = normalizeCategoryName(name);
+    final rows = await db.query(
+      'categories',
+      columns: ['id', 'name'],
+      where: 'is_active = 1',
+    );
+    if (rows.any(
+      (row) =>
+          row['id'] != excludingId &&
+          normalizeCategoryName(row['name'] as String) == normalized,
+    )) {
+      throw const DuplicateActiveCategoryName();
+    }
+  }
+
   Future<void> addCategory({
     required String name,
     required String colorHex,
     bool alertsEnabled = true,
   }) async {
     final db = await _database.database;
-    final now = DateTime.now().toIso8601String();
-    final orderRows = await db.rawQuery(
-      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM categories',
-    );
-    await db.insert('categories', {
-      'name': name.trim(),
-      'color_hex': colorHex,
-      'sort_order': _asInt(orderRows.first['next_order']),
-      'is_active': 1,
-      'alerts_enabled': alertsEnabled ? 1 : 0,
-      'created_at': now,
-      'updated_at': now,
+    await db.transaction((txn) async {
+      await _checkActiveCategoryName(txn, name);
+      final now = DateTime.now().toIso8601String();
+      final orderRows = await txn.rawQuery(
+        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM categories',
+      );
+      await txn.insert('categories', {
+        'name': name.trim(),
+        'color_hex': colorHex,
+        'sort_order': _asInt(orderRows.first['next_order']),
+        'is_active': 1,
+        'alerts_enabled': alertsEnabled ? 1 : 0,
+        'created_at': now,
+        'updated_at': now,
+      });
     });
     _notifyChanged();
   }
@@ -412,17 +468,20 @@ class FinanceRepository {
     bool? alertsEnabled,
   }) async {
     final db = await _database.database;
-    await db.update(
-      'categories',
-      {
-        'name': name.trim(),
-        'color_hex': colorHex,
-        if (alertsEnabled != null) 'alerts_enabled': alertsEnabled ? 1 : 0,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.transaction((txn) async {
+      await _checkActiveCategoryName(txn, name, excludingId: id);
+      await txn.update(
+        'categories',
+        {
+          'name': name.trim(),
+          'color_hex': colorHex,
+          if (alertsEnabled != null) 'alerts_enabled': alertsEnabled ? 1 : 0,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
     _notifyChanged();
   }
 
@@ -440,10 +499,28 @@ class FinanceRepository {
     _notifyChanged();
   }
 
-  Future<void> setCategoryActive(int id, bool active) async {
+  Future<void> setCategoryActive(
+    int id,
+    bool active, {
+    String? colorHex,
+    bool? alertsEnabled,
+  }) async {
     final db = await _database.database;
     await db.transaction((txn) async {
-      if (!active) {
+      if (active) {
+        final rows = await txn.query(
+          'categories',
+          columns: ['name'],
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (rows.isEmpty) return;
+        await _checkActiveCategoryName(
+          txn,
+          rows.single['name'] as String,
+          excludingId: id,
+        );
+      } else {
         final others = await txn.query(
           'categories',
           where: 'is_active = 1 AND id != ?',
@@ -456,6 +533,8 @@ class FinanceRepository {
         'categories',
         {
           'is_active': active ? 1 : 0,
+          'color_hex': ?colorHex,
+          if (alertsEnabled != null) 'alerts_enabled': alertsEnabled ? 1 : 0,
           'updated_at': DateTime.now().toIso8601String(),
         },
         where: 'id = ?',

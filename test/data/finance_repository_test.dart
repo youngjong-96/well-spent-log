@@ -35,6 +35,96 @@ void main() {
   });
 
   test(
+    'rejects normalized duplicate active names on create and rename',
+    () async {
+      await repository.addCategory(name: ' Travel ', colorHex: '#123456');
+      final travel = (await repository.listCategories()).last;
+      final other = (await repository.listCategories()).first;
+      await expectLater(
+        repository.addCategory(name: '\tTRAVEL ', colorHex: '#654321'),
+        throwsA(isA<DuplicateActiveCategoryName>()),
+      );
+      await expectLater(
+        repository.updateCategory(
+          id: other.id,
+          name: ' travel ',
+          colorHex: '#654321',
+        ),
+        throwsA(isA<DuplicateActiveCategoryName>()),
+      );
+      await repository.updateCategory(
+        id: travel.id,
+        name: ' TRAVEL ',
+        colorHex: '#654321',
+      );
+      final categories = await repository.listCategories();
+      expect(categories.first.name, other.name);
+      expect(categories.last.name, 'TRAVEL');
+
+      await repository.setCategoryActive(travel.id, false);
+      await repository.updateCategory(
+        id: other.id,
+        name: 'travel',
+        colorHex: '#654321',
+      );
+      expect((await repository.listCategories()).first.name, 'travel');
+    },
+  );
+
+  test(
+    'finds the newest hidden match and counts only live transactions',
+    () async {
+      final method = (await repository.listPaymentMethods()).first;
+      final now = DateTime.now();
+      Future<int> createHidden(String name, int liveCount) async {
+        await repository.addCategory(name: name, colorHex: '#123456');
+        final category = (await repository.listCategories()).last;
+        for (var i = 0; i <= liveCount; i++) {
+          final id = await repository.addTransaction(
+            TransactionDraft(
+              type: RecordType.expense,
+              occurredAt: now,
+              amount: 1000,
+              categoryId: category.id,
+              paymentMethodId: method.id,
+            ),
+          );
+          if (i == liveCount) await repository.softDeleteTransaction(id);
+        }
+        await repository.removeCategory(category.id);
+        return category.id;
+      }
+
+      final olderId = await createHidden('Travel', 1);
+      final newerId = await createHidden('TRAVEL', 2);
+      final hidden = (await repository.findHiddenCategoryByName(' travel\t'))!;
+      expect(hidden.category.id, newerId);
+      expect(hidden.transactionCount, 2);
+      expect(await repository.findHiddenCategoryByName('unknown'), isNull);
+      await repository.setCategoryActive(
+        newerId,
+        true,
+        colorHex: '#654321',
+        alertsEnabled: false,
+      );
+      final restored = (await repository.listCategories()).last;
+      expect(restored.id, newerId);
+      expect(restored.name, 'TRAVEL');
+      expect(restored.sortOrder, hidden.category.sortOrder);
+      expect(restored.colorHex, '#654321');
+      expect(restored.alertsEnabled, isFalse);
+      expect(
+        (await repository.findHiddenCategoryByName('travel'))?.category.id,
+        olderId,
+      );
+      await expectLater(
+        repository.setCategoryActive(olderId, true),
+        throwsA(isA<DuplicateActiveCategoryName>()),
+      );
+    },
+  );
+
+  test(
     'home includes all calendar-month spending sorted by amount, net of refunds',
     () async {
       final category = (await repository.listCategories()).first;

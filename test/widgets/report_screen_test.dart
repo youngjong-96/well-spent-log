@@ -27,7 +27,7 @@ void main() {
     }
   });
 
-  testWidgets('월간 보고서는 표를 기본으로 보여주고 차트 보기로 전환한다', (tester) async {
+  testWidgets('월간 보고서는 같은 이름의 카테고리를 각각 표시하고 차트로 전환한다', (tester) async {
     tester.view.physicalSize = const Size(430, 3000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -53,7 +53,7 @@ void main() {
       amount: 20000,
       memo: '병원',
       categoryId: 2,
-      categoryName: '건강',
+      categoryName: '식비',
       paymentMethodId: 1,
       paymentMethodName: '현금',
     );
@@ -91,6 +91,7 @@ void main() {
     expect(find.text('하루 평균 지출'), findsOneWidget);
     expect(find.text('가장 큰 지출'), findsOneWidget);
     expect(find.text('병원'), findsWidgets);
+    expect(find.text('식비'), findsNWidgets(2));
 
     final tooltipMessage = '${now.month}/1 · ${formatWon(10000)}';
     final barTooltip = find.byWidgetPredicate(

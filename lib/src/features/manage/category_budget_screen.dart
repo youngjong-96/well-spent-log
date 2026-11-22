@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme/app_theme.dart';
 import '../../application/providers.dart';
+import '../../data/repositories/finance_repository.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/category_colors.dart';
 import '../../domain/models/home_summary.dart';
 import '../../shared/formatters.dart';
 import '../../shared/widgets/budget_progress_tile.dart';
+
+const _duplicateNameMessage = '이미 있는 카테고리 이름이에요';
 
 class CategoryBudgetScreen extends ConsumerWidget {
   const CategoryBudgetScreen({super.key});
@@ -15,6 +18,7 @@ class CategoryBudgetScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categories = ref.watch(categoriesProvider);
+    final hiddenCategories = ref.watch(hiddenCategoriesProvider);
     final summary = ref.watch(homeSummaryProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('카테고리와 예산')),
@@ -47,7 +51,7 @@ class CategoryBudgetScreen extends ConsumerWidget {
                       ),
                     ),
                     TextButton.icon(
-                      onPressed: () => _editCategory(context, ref),
+                      onPressed: () => _editCategory(context),
                       icon: const Icon(Icons.add),
                       label: const Text('카테고리'),
                     ),
@@ -69,9 +73,35 @@ class CategoryBudgetScreen extends ConsumerWidget {
                     category,
                     _budgetFor(home, category.id),
                   ),
-                  onEdit: () => _editCategory(context, ref, category),
+                  onEdit: () => _editCategory(context, category),
                   onDelete: () => _deleteCategory(context, ref, category),
                 ),
+              if (hiddenCategories.hasError)
+                _RetryBody(
+                  onRetry: () => ref.invalidate(hiddenCategoriesProvider),
+                ),
+              if (hiddenCategories.value case final hidden?
+                  when hidden.isNotEmpty) ...[
+                const Divider(height: 24),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Text(
+                    '숨긴 카테고리',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                for (final item in hidden)
+                  ListTile(
+                    leading: _CategoryColorDot(item.category.colorHex),
+                    title: Text(item.category.name),
+                    subtitle: Text('기존 내역 ${item.transactionCount}건'),
+                    trailing: TextButton(
+                      onPressed: () =>
+                          _restoreCategory(context, ref, item.category.id),
+                      child: const Text('다시 사용'),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
@@ -131,31 +161,28 @@ class CategoryBudgetScreen extends ConsumerWidget {
   }
 
   Future<void> _editCategory(
-    BuildContext context,
-    WidgetRef ref, [
+    BuildContext context, [
     SpendingCategory? category,
   ]) async {
-    final result = await showDialog<(String, String, bool)>(
+    await showDialog<void>(
       context: context,
       builder: (context) => _CategoryDialog(category: category),
     );
-    if (result == null || !context.mounted) {
-      return;
-    }
-    final repository = ref.read(financeRepositoryProvider);
-    if (category == null) {
-      await repository.addCategory(
-        name: result.$1,
-        colorHex: result.$2,
-        alertsEnabled: result.$3,
-      );
-    } else {
-      await repository.updateCategory(
-        id: category.id,
-        name: result.$1,
-        colorHex: result.$2,
-        alertsEnabled: result.$3,
-      );
+  }
+
+  Future<void> _restoreCategory(
+    BuildContext context,
+    WidgetRef ref,
+    int id,
+  ) async {
+    try {
+      await ref.read(financeRepositoryProvider).setCategoryActive(id, true);
+    } on DuplicateActiveCategoryName {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text(_duplicateNameMessage)));
+      }
     }
   }
 
@@ -210,6 +237,81 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
   late final _hexController = TextEditingController(text: _initialHex);
   late bool _alertsEnabled = widget.category?.alertsEnabled ?? true;
   bool _hexEdited = false;
+  bool _saving = false;
+  String? _nameError;
+
+  Future<void> _save(String colorHex) async {
+    final name = _name.trim();
+    final alertsEnabled = _alertsEnabled;
+    final category = widget.category;
+    final repository = ref.read(financeRepositoryProvider);
+    final route = ModalRoute.of(context)!;
+    setState(() => _saving = true);
+    try {
+      if (category == null) {
+        final active = await repository.listCategories();
+        if (!mounted || !route.isCurrent) return;
+        if (active.any(
+          (item) =>
+              normalizeCategoryName(item.name) == normalizeCategoryName(name),
+        )) {
+          throw const DuplicateActiveCategoryName();
+        }
+        final hidden = await repository.findHiddenCategoryByName(name);
+        if (!mounted || !route.isCurrent) return;
+        if (hidden != null) {
+          final reuse = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('다시 사용할까요?'),
+              content: Text(
+                "예전에 쓰던 '${hidden.category.name}' 카테고리가 숨겨져 있어요. "
+                '(기존 내역 ${hidden.transactionCount}건과 예산이 함께 돌아와요)',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('새로 만들기'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('다시 사용'),
+                ),
+              ],
+            ),
+          );
+          if (!mounted || !route.isCurrent || reuse == null) return;
+          if (reuse) {
+            await repository.setCategoryActive(
+              hidden.category.id,
+              true,
+              colorHex: colorHex,
+              alertsEnabled: alertsEnabled,
+            );
+            if (mounted && route.isCurrent) Navigator.pop(context);
+            return;
+          }
+        }
+        await repository.addCategory(
+          name: name,
+          colorHex: colorHex,
+          alertsEnabled: alertsEnabled,
+        );
+      } else {
+        await repository.updateCategory(
+          id: category.id,
+          name: name,
+          colorHex: colorHex,
+          alertsEnabled: alertsEnabled,
+        );
+      }
+      if (mounted && route.isCurrent) Navigator.pop(context);
+    } on DuplicateActiveCategoryName {
+      if (mounted) setState(() => _nameError = _duplicateNameMessage);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -240,8 +342,14 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
             TextFormField(
               initialValue: _name,
               maxLength: 20,
-              onChanged: (value) => setState(() => _name = value),
-              decoration: const InputDecoration(labelText: '이름'),
+              onChanged: (value) => setState(() {
+                _name = value;
+                _nameError = null;
+              }),
+              decoration: InputDecoration(
+                labelText: '이름',
+                errorText: _nameError,
+              ),
             ),
             const Text('색상'),
             const SizedBox(height: 6),
@@ -326,15 +434,13 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
           child: const Text('취소'),
         ),
         FilledButton(
-          onPressed: normalizedHex == null || _name.trim().isEmpty
+          onPressed: _saving || normalizedHex == null || _name.trim().isEmpty
               ? null
-              : () => Navigator.pop(context, (
-                  _name.trim(),
+              : () => _save(
                   _hexController.text == _initialHex
                       ? _initialHex
                       : normalizedHex,
-                  _alertsEnabled,
-                )),
+                ),
           child: const Text('저장'),
         ),
       ],
@@ -361,18 +467,7 @@ class _CategoryBudgetTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       minTileHeight: 68,
-      leading: Container(
-        width: 18,
-        height: 18,
-        decoration: BoxDecoration(
-          color: visibleForeground(
-            colorFromHex(category.colorHex),
-            Theme.of(context).scaffoldBackgroundColor,
-            Theme.of(context).colorScheme.primary,
-          ),
-          shape: BoxShape.circle,
-        ),
-      ),
+      leading: _CategoryColorDot(category.colorHex),
       title: Text(category.name),
       subtitle: Text(budgetAmount == 0 ? '예산 미설정' : formatWon(budgetAmount)),
       onTap: onBudgetTap,
@@ -383,6 +478,28 @@ class _CategoryBudgetTile extends StatelessWidget {
           PopupMenuItem(value: 'edit', child: Text('수정')),
           PopupMenuItem(value: 'delete', child: Text('삭제')),
         ],
+      ),
+    );
+  }
+}
+
+class _CategoryColorDot extends StatelessWidget {
+  const _CategoryColorDot(this.colorHex);
+
+  final String colorHex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: visibleForeground(
+          colorFromHex(colorHex),
+          Theme.of(context).scaffoldBackgroundColor,
+          Theme.of(context).colorScheme.primary,
+        ),
+        shape: BoxShape.circle,
       ),
     );
   }

@@ -304,6 +304,93 @@ void main() {
     );
   });
 
+  testWidgets('활성 카테고리와 이름이 겹치면 입력란에 오류를 표시해요', (tester) async {
+    await tester.runAsync(
+      () => repository.addCategory(name: 'Travel', colorHex: '#123456'),
+    );
+    await mount(tester, const CategoryBudgetScreen());
+    await tapLabel(tester, '카테고리');
+    await tester.enterText(find.byType(TextFormField), ' TRAVEL ');
+    await tester.pump();
+    await tapLabel(tester, '저장');
+    expect(find.text('이미 있는 카테고리 이름이에요'), findsOneWidget);
+    await tapLabel(tester, '취소');
+
+    await tester.tap(find.byTooltip('카테고리 메뉴').first);
+    await settle(tester);
+    await tapLabel(tester, '수정');
+    await tester.enterText(find.byType(TextFormField), ' travel ');
+    await tapLabel(tester, '저장');
+    expect(find.text('이미 있는 카테고리 이름이에요'), findsOneWidget);
+  });
+
+  for (final choice in [null, '다시 사용', '새로 만들기']) {
+    testWidgets('숨긴 카테고리 확인 선택: ${choice ?? '닫기'}', (tester) async {
+      await SettingsStore().setBudgetAlertsEnabled(true);
+      final hidden = (await tester.runAsync(() async {
+        final category = (await repository.listCategories()).first;
+        final method = (await repository.listPaymentMethods()).first;
+        await repository.addTransaction(
+          TransactionDraft(
+            type: RecordType.expense,
+            occurredAt: DateTime.now(),
+            amount: 1000,
+            categoryId: category.id,
+            paymentMethodId: method.id,
+          ),
+        );
+        await repository.removeCategory(category.id);
+        return category;
+      }))!;
+      await mount(tester, const CategoryBudgetScreen());
+      await tapLabel(tester, '카테고리');
+      await tester.enterText(find.byType(TextFormField), ' ${hidden.name} ');
+      await tester.enterText(hexField, '#654321');
+      await tapLabel(tester, '예산 알림 받기');
+      await tapLabel(tester, '저장');
+      expect(find.text('다시 사용할까요?'), findsOneWidget);
+      expect(find.textContaining('기존 내역 1건과 예산이 함께 돌아와요'), findsOneWidget);
+      if (choice == null) {
+        await tester.tapAt(const Offset(4, 4));
+        await settle(tester);
+      } else {
+        await tapLabel(tester, choice);
+      }
+      expect(find.text('다시 사용할까요?'), findsNothing);
+      final all = (await tester.runAsync(
+        () => repository.listCategories(includeInactive: true),
+      ))!;
+      final matches = all.where((item) => item.name == hidden.name).toList();
+      expect(matches, hasLength(choice == '새로 만들기' ? 2 : 1));
+      expect(matches.first.isActive, choice == '다시 사용');
+      if (choice != null) {
+        final saved = matches.singleWhere((item) => item.isActive);
+        expect(saved.colorHex, '#654321');
+        expect(saved.alertsEnabled, isFalse);
+      }
+    });
+  }
+
+  testWidgets('숨긴 카테고리가 있을 때만 표시하고 다시 사용할 수 있어요', (tester) async {
+    await mount(tester, const CategoryBudgetScreen());
+    final list = find.byType(ListView);
+    await tester.drag(list, const Offset(0, -400));
+    await settle(tester);
+    expect(find.text('숨긴 카테고리'), findsNothing);
+    await tester.runAsync(() async {
+      final category = (await repository.listCategories()).last;
+      await repository.setCategoryActive(category.id, false);
+    });
+    await settle(tester);
+    await tester.drag(list, const Offset(0, -400));
+    await settle(tester);
+    expect(find.text('숨긴 카테고리'), findsOneWidget);
+    expect(find.text('기존 내역 0건'), findsOneWidget);
+    await tapLabel(tester, '다시 사용');
+    expect(find.text('숨긴 카테고리'), findsNothing);
+    expect(await tester.runAsync(repository.listHiddenCategories), isEmpty);
+  });
+
   testWidgets('이전 달 거래가 있으면 자동 완료하고 홈을 표시한다', (tester) async {
     await tester.runAsync(() async {
       final category = (await repository.listCategories()).first;

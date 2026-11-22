@@ -121,6 +121,13 @@ final categoriesProvider = FutureProvider<List<SpendingCategory>>((ref) async {
   return ref.watch(financeRepositoryProvider).listCategories();
 });
 
+final hiddenCategoriesProvider = FutureProvider<List<HiddenCategory>>((
+  ref,
+) async {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(financeRepositoryProvider).listHiddenCategories();
+});
+
 final paymentMethodsProvider = FutureProvider<List<PaymentMethod>>((ref) async {
   ref.watch(dataRevisionProvider);
   return ref.watch(financeRepositoryProvider).listPaymentMethods();
