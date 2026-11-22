@@ -14,6 +14,7 @@ import 'package:well_spent_log/src/data/repositories/finance_repository.dart';
 import 'package:well_spent_log/src/data/services/backup_service.dart';
 import 'package:well_spent_log/src/data/services/notification_service.dart';
 import 'package:well_spent_log/src/data/settings/settings_store.dart';
+import 'package:well_spent_log/src/domain/models/category_colors.dart';
 import 'package:well_spent_log/src/domain/models/transaction_draft.dart';
 import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 import 'package:well_spent_log/src/features/manage/manage_screen.dart';
@@ -194,33 +195,112 @@ void main() {
     expect(find.text('전체 예산 알림이 꺼져 있어요'), findsOneWidget);
   });
 
-  testWidgets('잘못된 HEX를 안내하고 대비가 낮은 직접 선택 색상도 저장한다', (tester) async {
+  const legacyHex = 'abcdef';
+  final hexField = find.widgetWithText(TextField, 'HEX 색상');
+
+  String hexText(WidgetTester tester) =>
+      tester.widget<TextField>(hexField).controller!.text;
+
+  Future<int> openLegacyCategory(WidgetTester tester) async {
+    final id = await tester.runAsync(() async {
+      final category = (await repository.listCategories()).first;
+      await repository.updateCategory(
+        id: category.id,
+        name: category.name,
+        colorHex: legacyHex,
+      );
+      return category.id;
+    });
+    await mount(tester, const CategoryBudgetScreen());
+    await tester.tap(find.byTooltip('카테고리 메뉴').first);
+    await settle(tester);
+    await tapLabel(tester, '수정');
+    return id!;
+  }
+
+  testWidgets('기존 맞춤 색상을 HEX에 표시하고 그대로 저장한다', (tester) async {
+    final id = await openLegacyCategory(tester);
+    final swatches = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(CircleAvatar),
+    );
+    expect(swatches, findsNWidgets(categoryColorPresets.length));
+    expect(
+      tester
+          .widgetList<CircleAvatar>(swatches)
+          .every((swatch) => swatch.child == null),
+      isTrue,
+    );
+    expect(hexText(tester), legacyHex);
+
+    await tester.enterText(find.byType(TextFormField), '수정한 이름');
+    await tapLabel(tester, '저장');
+    final categories = await tester.runAsync(repository.listCategories);
+    final saved = categories!.singleWhere((category) => category.id == id);
+    expect(saved.name, '수정한 이름');
+    expect(saved.colorHex, legacyHex);
+  });
+
+  testWidgets('기존 색상 대신 고른 기본 색상을 저장한다', (tester) async {
+    final id = await openLegacyCategory(tester);
+    final preset = categoryColorPresets.last;
+    final swatch = find.byTooltip('카테고리 색상 $preset');
+    await tester.tap(swatch);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: swatch, matching: find.byIcon(Icons.check)),
+      findsOneWidget,
+    );
+    expect(hexText(tester), preset);
+
+    await tapLabel(tester, '예산 알림 받기');
+    await tapLabel(tester, '저장');
+    final categories = await tester.runAsync(repository.listCategories);
+    final saved = categories!.singleWhere((category) => category.id == id);
+    expect(saved.colorHex, preset);
+    expect(saved.alertsEnabled, isFalse);
+  });
+
+  testWidgets('기본 색상 14개와 HEX 입력을 표시하고 입력과 선택을 연동한다', (tester) async {
     await mount(tester, const CategoryBudgetScreen());
     await tapLabel(tester, '카테고리');
-    await tester.enterText(find.widgetWithText(TextFormField, '이름'), '맞춤 색상');
-    await tapLabel(tester, '직접 선택');
-    final hex = find.widgetWithText(TextField, 'HEX 색상');
-    await tester.enterText(hex, '#00zz00');
+    expect(find.byType(CircleAvatar), findsNWidgets(14));
+    expect(find.byType(Slider), findsNothing);
+    expect(find.widgetWithText(TextFormField, '이름'), findsOneWidget);
+    expect(find.text('직접 선택'), findsNothing);
+    expect(hexText(tester), categoryColorPresets.first);
+
+    final preset = categoryColorPresets.last;
+    await tester.enterText(hexField, preset.substring(1).toLowerCase());
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byTooltip('카테고리 색상 $preset'),
+        matching: find.byIcon(Icons.check),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('배경과 비슷해서'), findsNothing);
+  });
+
+  testWidgets('잘못된 HEX는 저장을 막고 대비가 낮은 유효한 HEX는 저장한다', (tester) async {
+    await mount(tester, const CategoryBudgetScreen());
+    await tapLabel(tester, '카테고리');
+    await tester.enterText(find.byType(TextFormField), '맞춤 색상');
+    await tester.enterText(hexField, '#00zz00');
     await tester.pumpAndSettle();
     expect(find.text('색상 코드 6자리를 입력해 주세요.'), findsOneWidget);
     final save = find.widgetWithText(FilledButton, '저장');
     expect(tester.widget<FilledButton>(save).onPressed, isNull);
 
-    await tester.enterText(hex, 'fffffe');
+    await tester.enterText(hexField, 'fffffe');
     await tester.pumpAndSettle();
     expect(find.textContaining('배경과 비슷해서'), findsOneWidget);
-    await tapLabel(tester, '예산 알림 받기');
     await tapLabel(tester, '저장');
     final categories = await tester.runAsync(repository.listCategories);
     expect(
       categories!.singleWhere((category) => category.name == '맞춤 색상').colorHex,
       '#FFFFFE',
-    );
-    expect(
-      categories
-          .singleWhere((category) => category.name == '맞춤 색상')
-          .alertsEnabled,
-      isFalse,
     );
   });
 

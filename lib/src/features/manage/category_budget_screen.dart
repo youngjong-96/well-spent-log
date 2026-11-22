@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../application/providers.dart';
 import '../../app/theme/app_theme.dart';
+import '../../application/providers.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/category_colors.dart';
 import '../../domain/models/home_summary.dart';
@@ -205,17 +205,11 @@ class _CategoryDialog extends ConsumerStatefulWidget {
 
 class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
   late String _name = widget.category?.name ?? '';
-  late String _colorHex =
-      normalizeCategoryHex(widget.category?.colorHex ?? '') ??
-      categoryColorPresets.first;
-  late final _hexController = TextEditingController(text: _colorHex);
-  late HSVColor _hsv = _hsvFromHex(_colorHex);
-  late bool _custom = !categoryColorPresets.contains(_colorHex);
+  late final _initialHex =
+      widget.category?.colorHex ?? categoryColorPresets.first;
+  late final _hexController = TextEditingController(text: _initialHex);
   late bool _alertsEnabled = widget.category?.alertsEnabled ?? true;
-
-  HSVColor _hsvFromHex(String hex) => HSVColor.fromColor(
-    Color(0xFF000000 | int.parse(hex.substring(1), radix: 16)),
-  );
+  bool _hexEdited = false;
 
   @override
   void dispose() {
@@ -223,39 +217,17 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
     super.dispose();
   }
 
-  void _selectPreset(String hex) => setState(() {
-    _custom = false;
-    _hsv = _hsvFromHex(hex);
-    _colorHex = _hexController.text = hex;
-  });
-
-  void _updateHex(String text) {
-    setState(() {
-      final hex = normalizeCategoryHex(text);
-      if (hex == null) return;
-      _hsv = _hsvFromHex(hex);
-      _colorHex = hex;
-    });
-  }
-
-  void _updateSliders(HSVColor hsv) => setState(() {
-    _hsv = hsv;
-    final rgb = hsv.toColor().toARGB32() & 0xFFFFFF;
-    _colorHex = _hexController.text =
-        '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
-  });
-
   @override
   Widget build(BuildContext context) {
     final masterEnabled = ref.watch(budgetAlertsEnabledProvider).value;
-    final color = colorFromHex(_colorHex);
-    final light = AppTheme.light;
-    final dark = AppTheme.dark;
-    final invalidHex =
-        _custom && normalizeCategoryHex(_hexController.text) == null;
+    final normalizedHex = normalizeCategoryHex(_hexController.text);
+    final color = normalizedHex == null ? null : colorFromHex(normalizedHex);
     final lowContrast =
-        BudgetProgressBar.usesFallback(light, color) ||
-        BudgetProgressBar.usesFallback(dark, color);
+        _hexEdited &&
+        color != null &&
+        !categoryColorPresets.contains(normalizedHex) &&
+        (BudgetProgressBar.usesFallback(AppTheme.light, color) ||
+            BudgetProgressBar.usesFallback(AppTheme.dark, color));
     return AlertDialog(
       scrollable: true,
       title: Text(widget.category == null ? '카테고리 추가' : '카테고리 수정'),
@@ -277,15 +249,18 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
               children: [
                 for (final hex in categoryColorPresets)
                   Semantics(
-                    selected: !_custom && _colorHex == hex,
+                    selected: normalizedHex == hex,
                     child: IconButton(
                       tooltip: '카테고리 색상 $hex',
-                      onPressed: () => _selectPreset(hex),
+                      onPressed: () => setState(() {
+                        _hexController.text = hex;
+                        _hexEdited = false;
+                      }),
                       icon: CircleAvatar(
                         radius: 15,
                         backgroundColor: colorFromHex(hex),
                         foregroundColor: Colors.white,
-                        child: !_custom && _colorHex == hex
+                        child: normalizedHex == hex
                             ? const Icon(Icons.check, size: 18)
                             : null,
                       ),
@@ -293,49 +268,42 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
                   ),
               ],
             ),
-            FilterChip(
-              label: const Text('직접 선택'),
-              selected: _custom,
-              onSelected: (selected) => setState(() {
-                _custom = selected;
-                _hexController.text = _colorHex;
-              }),
-            ),
-            if (_custom) ...[
-              const SizedBox(height: 8),
-              TextField(
-                controller: _hexController,
-                autocorrect: false,
-                textCapitalization: TextCapitalization.characters,
-                onChanged: _updateHex,
-                decoration: InputDecoration(
-                  labelText: 'HEX 색상',
-                  hintText: '#RRGGBB',
-                  errorText: invalidHex ? '색상 코드 6자리를 입력해 주세요.' : null,
+            const SizedBox(height: 8),
+            TextField(
+              controller: _hexController,
+              autocorrect: false,
+              enableSuggestions: false,
+              textCapitalization: TextCapitalization.characters,
+              onChanged: (_) => setState(() => _hexEdited = true),
+              decoration: InputDecoration(
+                isDense: true,
+                labelText: 'HEX 색상',
+                hintText: '#RRGGBB',
+                errorText: normalizedHex == null ? '색상 코드 6자리를 입력해 주세요.' : null,
+                suffixIcon: Center(
+                  widthFactor: 1,
+                  heightFactor: 1,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color,
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              _slider('색조', _hsv.hue, 360, (value) {
-                _updateSliders(_hsv.withHue(value));
-              }),
-              _slider('채도', _hsv.saturation, 1, (value) {
-                _updateSliders(_hsv.withSaturation(value));
-              }),
-              _slider('밝기', _hsv.value, 1, (value) {
-                _updateSliders(_hsv.withValue(value));
-              }),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(child: _preview(light, '라이트 모드', color)),
-                const SizedBox(width: 8),
-                Expanded(child: _preview(dark, '다크 모드', color)),
-              ],
             ),
             if (lowContrast)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text('배경과 비슷해서 막대가 잘 안 보일 수 있어요. 이 경우 기본 색으로 보여요.'),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '배경과 비슷해서 막대가 잘 안 보일 수 있어요. 이 경우 기본 색으로 보여요.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
             const SizedBox(height: 12),
             SwitchListTile(
@@ -358,11 +326,13 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
           child: const Text('취소'),
         ),
         FilledButton(
-          onPressed: invalidHex || _name.trim().isEmpty
+          onPressed: normalizedHex == null || _name.trim().isEmpty
               ? null
               : () => Navigator.pop(context, (
                   _name.trim(),
-                  _colorHex,
+                  _hexController.text == _initialHex
+                      ? _initialHex
+                      : normalizedHex,
                   _alertsEnabled,
                 )),
           child: const Text('저장'),
@@ -370,40 +340,6 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
       ],
     );
   }
-
-  Widget _slider(
-    String label,
-    double value,
-    double max,
-    ValueChanged<double> onChanged,
-  ) => Row(
-    children: [
-      Text(label),
-      Expanded(
-        child: Semantics(
-          label: label,
-          child: Slider(value: value, max: max, onChanged: onChanged),
-        ),
-      ),
-    ],
-  );
-
-  Widget _preview(ThemeData theme, String label, Color color) => Theme(
-    data: theme,
-    child: Card(
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: theme.textTheme.bodySmall),
-            const SizedBox(height: 6),
-            BudgetProgressBar(value: 0.42, color: color),
-          ],
-        ),
-      ),
-    ),
-  );
 }
 
 class _CategoryBudgetTile extends StatelessWidget {
