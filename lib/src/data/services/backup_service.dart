@@ -134,6 +134,12 @@ class BackupService {
             throw FormatException('$table 데이터 형식이 잘못됐습니다.');
           }
           final values = Map<String, Object?>.from(row);
+          if (table == 'categories') {
+            final enabled = values.putIfAbsent('alerts_enabled', () => 1);
+            if (enabled is! int || (enabled != 0 && enabled != 1)) {
+              throw const FormatException('카테고리별 알림 설정이 올바르지 않아요.');
+            }
+          }
           if (table == 'transactions') {
             final date = values['occurred_at'];
             final amount = values['amount'];

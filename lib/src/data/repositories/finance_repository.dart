@@ -386,6 +386,7 @@ class FinanceRepository {
   Future<void> addCategory({
     required String name,
     required String colorHex,
+    bool alertsEnabled = true,
   }) async {
     final db = await _database.database;
     final now = DateTime.now().toIso8601String();
@@ -397,6 +398,7 @@ class FinanceRepository {
       'color_hex': colorHex,
       'sort_order': _asInt(orderRows.first['next_order']),
       'is_active': 1,
+      'alerts_enabled': alertsEnabled ? 1 : 0,
       'created_at': now,
       'updated_at': now,
     });
@@ -407,6 +409,7 @@ class FinanceRepository {
     required int id,
     required String name,
     required String colorHex,
+    bool? alertsEnabled,
   }) async {
     final db = await _database.database;
     await db.update(
@@ -414,10 +417,25 @@ class FinanceRepository {
       {
         'name': name.trim(),
         'color_hex': colorHex,
+        if (alertsEnabled != null) 'alerts_enabled': alertsEnabled ? 1 : 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [id],
+    );
+    _notifyChanged();
+  }
+
+  Future<void> setCategoryAlertsEnabled(bool enabled, {int? categoryId}) async {
+    final db = await _database.database;
+    await db.update(
+      'categories',
+      {
+        'alerts_enabled': enabled ? 1 : 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: categoryId == null ? 'is_active = 1' : 'is_active = 1 AND id = ?',
+      whereArgs: categoryId == null ? null : [categoryId],
     );
     _notifyChanged();
   }
@@ -831,7 +849,7 @@ class FinanceRepository {
       final alerts = <(int, String, int)>[];
       final rows = await txn.rawQuery(
         '''
-      SELECT c.name, COALESCE(mb.amount, 0) AS budget,
+      SELECT c.name, c.alerts_enabled, COALESCE(mb.amount, 0) AS budget,
         COALESCE(SUM(CASE
           WHEN t.type = 'expense' THEN t.amount
           WHEN t.type = 'refund' THEN -t.amount
@@ -845,7 +863,7 @@ class FinanceRepository {
         AND t.occurred_at >= ?
         AND t.occurred_at < ?
       WHERE c.id = ?
-      GROUP BY c.id, c.name, mb.amount
+      GROUP BY c.id, c.name, c.alerts_enabled, mb.amount
       ''',
         [
           period.id,
@@ -860,6 +878,7 @@ class FinanceRepository {
       final spentPercent =
           BigInt.from(_asInt(rows.first['spent'])) * BigInt.from(100);
       final categoryName = rows.first['name']! as String;
+      final alertsEnabled = rows.first['alerts_enabled'] == 1;
       for (final threshold in const [50, 80, 100]) {
         const where = 'period_id = ? AND category_id = ? AND threshold = ?';
         final keys = [period.id, categoryId, threshold];
@@ -868,6 +887,7 @@ class FinanceRepository {
           await txn.delete('alert_history', where: where, whereArgs: keys);
           continue;
         }
+        if (!alertsEnabled) continue;
 
         final existing = await txn.query(
           'alert_history',

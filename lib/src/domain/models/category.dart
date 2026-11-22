@@ -5,6 +5,7 @@ class SpendingCategory {
     required this.colorHex,
     required this.sortOrder,
     required this.isActive,
+    this.alertsEnabled = true,
   });
 
   final int id;
@@ -12,6 +13,7 @@ class SpendingCategory {
   final String colorHex;
   final int sortOrder;
   final bool isActive;
+  final bool alertsEnabled;
 
   factory SpendingCategory.fromMap(Map<String, Object?> map) {
     return SpendingCategory(
@@ -20,6 +22,7 @@ class SpendingCategory {
       colorHex: map['color_hex']! as String,
       sortOrder: map['sort_order']! as int,
       isActive: map['is_active'] == 1,
+      alertsEnabled: (map['alerts_enabled'] ?? 1) == 1,
     );
   }
 }

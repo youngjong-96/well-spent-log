@@ -121,10 +121,12 @@ void main() {
     bool enabled() => tester.widget<SwitchListTile>(tile).value;
     expect(enabled(), isTrue);
     expect(find.text('설정 열기'), findsNothing);
+    expect(find.text('카테고리별 알림 · 8개 중 8개 켜짐'), findsOneWidget);
 
     await tester.tap(tile);
     await tester.pumpAndSettle();
     expect(enabled(), isFalse);
+    expect(find.textContaining('카테고리별 알림'), findsNothing);
     expect(await SettingsStore().getBudgetAlertsEnabled(), isFalse);
 
     permissions.granted = false;
@@ -144,6 +146,54 @@ void main() {
     expect(find.text('설정 열기'), findsNothing);
   });
 
+  testWidgets('카테고리별 알림은 보이는 카테고리만 집계하고 변경을 반영한다', (tester) async {
+    await tester.runAsync(() => repository.setCategoryActive(8, false));
+    await mount(
+      tester,
+      const Scaffold(body: ManageScreen()),
+      notificationService: _AlertPermissions(),
+    );
+    final allOn = find.text('카테고리별 알림 · 7개 중 7개 켜짐');
+    await tapLabel(tester, '카테고리별 알림 · 7개 중 7개 켜짐');
+    final tiles = find.byType(SwitchListTile);
+    Iterable<bool> values() =>
+        tester.widgetList<SwitchListTile>(tiles).map((tile) => tile.value);
+    expect(tiles, findsNWidgets(7));
+    expect(find.text('기타'), findsNothing);
+    await tapLabel(tester, '식비');
+    expect(values().where((value) => value), hasLength(6));
+    await tester.pageBack();
+    await settle(tester);
+    expect(allOn, findsNothing);
+    await tapLabel(tester, '카테고리별 알림 · 7개 중 6개 켜짐');
+    await tapLabel(tester, '모두 켜기');
+    expect(values(), everyElement(isTrue));
+    await tapLabel(tester, '모두 끄기');
+    expect(values(), everyElement(isFalse));
+    await tester.pageBack();
+    await settle(tester);
+    expect(find.text('카테고리별 알림 · 7개 중 0개 켜짐'), findsOneWidget);
+    final categories = await tester.runAsync(
+      () => repository.listCategories(includeInactive: true),
+    );
+    expect(
+      categories!.singleWhere((item) => item.id == 8).alertsEnabled,
+      isTrue,
+    );
+  });
+
+  testWidgets('전체 예산 알림이 꺼지면 카테고리 스위치를 비활성화한다', (tester) async {
+    await SettingsStore().setBudgetAlertsEnabled(false);
+    await mount(tester, const CategoryBudgetScreen());
+    await tapLabel(tester, '카테고리');
+    final tile = tester.widget<SwitchListTile>(
+      find.widgetWithText(SwitchListTile, '예산 알림 받기'),
+    );
+    expect(tile.onChanged, isNull);
+    expect(tile.value, isTrue);
+    expect(find.text('전체 예산 알림이 꺼져 있어요'), findsOneWidget);
+  });
+
   testWidgets('잘못된 HEX를 안내하고 대비가 낮은 직접 선택 색상도 저장한다', (tester) async {
     await mount(tester, const CategoryBudgetScreen());
     await tapLabel(tester, '카테고리');
@@ -159,11 +209,18 @@ void main() {
     await tester.enterText(hex, 'fffffe');
     await tester.pumpAndSettle();
     expect(find.textContaining('배경과 비슷해서'), findsOneWidget);
+    await tapLabel(tester, '예산 알림 받기');
     await tapLabel(tester, '저장');
     final categories = await tester.runAsync(repository.listCategories);
     expect(
       categories!.singleWhere((category) => category.name == '맞춤 색상').colorHex,
       '#FFFFFE',
+    );
+    expect(
+      categories
+          .singleWhere((category) => category.name == '맞춤 색상')
+          .alertsEnabled,
+      isFalse,
     );
   });
 

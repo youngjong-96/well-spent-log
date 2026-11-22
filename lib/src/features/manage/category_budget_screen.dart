@@ -135,21 +135,26 @@ class CategoryBudgetScreen extends ConsumerWidget {
     WidgetRef ref, [
     SpendingCategory? category,
   ]) async {
-    final result = await showDialog<(String, String)>(
+    final result = await showDialog<(String, String, bool)>(
       context: context,
       builder: (context) => _CategoryDialog(category: category),
     );
-    if (result == null) {
+    if (result == null || !context.mounted) {
       return;
     }
     final repository = ref.read(financeRepositoryProvider);
     if (category == null) {
-      await repository.addCategory(name: result.$1, colorHex: result.$2);
+      await repository.addCategory(
+        name: result.$1,
+        colorHex: result.$2,
+        alertsEnabled: result.$3,
+      );
     } else {
       await repository.updateCategory(
         id: category.id,
         name: result.$1,
         colorHex: result.$2,
+        alertsEnabled: result.$3,
       );
     }
   }
@@ -189,16 +194,16 @@ class CategoryBudgetScreen extends ConsumerWidget {
   }
 }
 
-class _CategoryDialog extends StatefulWidget {
+class _CategoryDialog extends ConsumerStatefulWidget {
   const _CategoryDialog({this.category});
 
   final SpendingCategory? category;
 
   @override
-  State<_CategoryDialog> createState() => _CategoryDialogState();
+  ConsumerState<_CategoryDialog> createState() => _CategoryDialogState();
 }
 
-class _CategoryDialogState extends State<_CategoryDialog> {
+class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
   late String _name = widget.category?.name ?? '';
   late String _colorHex =
       normalizeCategoryHex(widget.category?.colorHex ?? '') ??
@@ -206,6 +211,7 @@ class _CategoryDialogState extends State<_CategoryDialog> {
   late final _hexController = TextEditingController(text: _colorHex);
   late HSVColor _hsv = _hsvFromHex(_colorHex);
   late bool _custom = !categoryColorPresets.contains(_colorHex);
+  late bool _alertsEnabled = widget.category?.alertsEnabled ?? true;
 
   HSVColor _hsvFromHex(String hex) => HSVColor.fromColor(
     Color(0xFF000000 | int.parse(hex.substring(1), radix: 16)),
@@ -241,6 +247,7 @@ class _CategoryDialogState extends State<_CategoryDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final masterEnabled = ref.watch(budgetAlertsEnabledProvider).value;
     final color = colorFromHex(_colorHex);
     final light = AppTheme.light;
     final dark = AppTheme.dark;
@@ -330,6 +337,18 @@ class _CategoryDialogState extends State<_CategoryDialog> {
                 padding: EdgeInsets.only(top: 8),
                 child: Text('배경과 비슷해서 막대가 잘 안 보일 수 있어요. 이 경우 기본 색으로 보여요.'),
               ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('예산 알림 받기'),
+              subtitle: masterEnabled == false
+                  ? const Text('전체 예산 알림이 꺼져 있어요')
+                  : null,
+              value: _alertsEnabled,
+              onChanged: masterEnabled == true
+                  ? (value) => setState(() => _alertsEnabled = value)
+                  : null,
+            ),
           ],
         ),
       ),
@@ -341,7 +360,11 @@ class _CategoryDialogState extends State<_CategoryDialog> {
         FilledButton(
           onPressed: invalidHex || _name.trim().isEmpty
               ? null
-              : () => Navigator.pop(context, (_name.trim(), _colorHex)),
+              : () => Navigator.pop(context, (
+                  _name.trim(),
+                  _colorHex,
+                  _alertsEnabled,
+                )),
           child: const Text('저장'),
         ),
       ],

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../application/providers.dart';
+import '../../shared/formatters.dart';
 import '../onboarding/onboarding_screen.dart';
 
 class ManageScreen extends StatelessWidget {
@@ -43,6 +44,7 @@ class ManageScreen extends StatelessWidget {
             const Divider(height: 32),
             const _SectionLabel('예산과 기록'),
             _BudgetAlertsTile(visible: visible),
+            const _CategoryAlertsSummary(),
             _ManageTile(
               icon: Icons.category_outlined,
               title: '카테고리와 예산',
@@ -193,6 +195,117 @@ class _BudgetAlertsTileState extends ConsumerState<_BudgetAlertsTile> {
           ],
         );
       },
+    );
+  }
+}
+
+class _CategoryAlertsSummary extends ConsumerWidget {
+  const _CategoryAlertsSummary();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(budgetAlertsEnabledProvider).value != true) {
+      return const SizedBox.shrink();
+    }
+    final categories = ref.watch(categoriesProvider).value;
+    if (categories == null) return const SizedBox.shrink();
+    final enabled = categories.where((category) => category.alertsEnabled);
+    return ListTile(
+      leading: const Icon(Icons.tune),
+      title: Text('카테고리별 알림 · ${categories.length}개 중 ${enabled.length}개 켜짐'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const _CategoryAlertsScreen()),
+      ),
+    );
+  }
+}
+
+class _CategoryAlertsScreen extends ConsumerStatefulWidget {
+  const _CategoryAlertsScreen();
+
+  @override
+  ConsumerState<_CategoryAlertsScreen> createState() =>
+      _CategoryAlertsScreenState();
+}
+
+class _CategoryAlertsScreenState extends ConsumerState<_CategoryAlertsScreen> {
+  bool _saving = false;
+
+  Future<void> _setEnabled(bool enabled, {int? categoryId}) async {
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(financeRepositoryProvider)
+          .setCategoryAlertsEnabled(enabled, categoryId: categoryId);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('카테고리별 알림 설정을 변경하지 못했어요.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = ref.watch(categoriesProvider);
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('카테고리별 알림')),
+      body: categories.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, _) => Center(
+          child: TextButton(
+            onPressed: () => ref.invalidate(categoriesProvider),
+            child: const Text('다시 시도'),
+          ),
+        ),
+        data: (items) => ListView(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  TextButton(
+                    onPressed:
+                        _saving || items.every((item) => item.alertsEnabled)
+                        ? null
+                        : () => _setEnabled(true),
+                    child: const Text('모두 켜기'),
+                  ),
+                  TextButton(
+                    onPressed:
+                        _saving || items.every((item) => !item.alertsEnabled)
+                        ? null
+                        : () => _setEnabled(false),
+                    child: const Text('모두 끄기'),
+                  ),
+                ],
+              ),
+            ),
+            for (final category in items)
+              SwitchListTile(
+                secondary: CircleAvatar(
+                  radius: 9,
+                  backgroundColor: visibleForeground(
+                    colorFromHex(category.colorHex),
+                    theme.scaffoldBackgroundColor,
+                    theme.colorScheme.primary,
+                  ),
+                ),
+                title: Text(category.name),
+                value: category.alertsEnabled,
+                onChanged: _saving
+                    ? null
+                    : (value) => _setEnabled(value, categoryId: category.id),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

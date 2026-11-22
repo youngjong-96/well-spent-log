@@ -27,7 +27,7 @@ class AppDatabase {
     return _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 3,
+        version: 4,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -83,6 +83,10 @@ class AppDatabase {
             if ((await db.rawQuery('PRAGMA foreign_key_check')).isNotEmpty) {
               throw const FormatException('기존 지출 데이터의 연결 정보를 확인해 주세요.');
             }
+          } else if (oldVersion < 4) {
+            await db.execute(
+              'ALTER TABLE categories ADD COLUMN alerts_enabled INTEGER NOT NULL DEFAULT 1',
+            );
           }
         },
       ),
@@ -97,6 +101,7 @@ class AppDatabase {
         color_hex TEXT NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
         is_active INTEGER NOT NULL DEFAULT 1,
+        alerts_enabled INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -194,6 +199,7 @@ class AppDatabase {
         'color_hex': categoryColorPresets[index],
         'sort_order': index,
         'is_active': 1,
+        'alerts_enabled': 1,
         'created_at': now,
         'updated_at': now,
       });

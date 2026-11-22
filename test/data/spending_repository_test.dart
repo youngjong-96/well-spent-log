@@ -202,6 +202,31 @@ void main() {
   );
 
   test(
+    'category alerts start on and disabling them leaves thresholds eligible',
+    () async {
+      await repository.addCategory(name: '문화생활', colorHex: '#84B6E2');
+      expect(
+        (await repository.listCategories()).map((item) => item.alertsEnabled),
+        everyElement(isTrue),
+      );
+      await repository.setBudget(categoryId: 1, amount: 10000, anchor: month);
+      await repository.setCategoryAlertsEnabled(false, categoryId: 1);
+      await repository.addTransaction(draft(10000));
+      final db = await database.database;
+      expect(alerts.thresholds, isEmpty);
+      expect(await db.query('alert_history'), isEmpty);
+
+      await repository.setCategoryAlertsEnabled(true, categoryId: 1);
+      expect(alerts.thresholds, isEmpty);
+      expect(await db.query('alert_history'), isEmpty);
+      await repository.addTransaction(draft(1));
+      await repository.addTransaction(draft(1));
+      expect(alerts.thresholds, [50, 80, 100]);
+      expect(await db.query('alert_history'), hasLength(3));
+    },
+  );
+
+  test(
     'alert preference round trips and older backups default to on',
     () async {
       final directory = await Directory.systemTemp.createTemp('alert_backup');
@@ -209,15 +234,23 @@ void main() {
       final service = BackupService(database, exportDirectory: directory);
       final settings = SettingsStore();
       await settings.setBudgetAlertsEnabled(false);
+      await repository.setCategoryAlertsEnabled(false, categoryId: 1);
       final file = await service.createJsonBackup();
       final bytes = await file.readAsBytes();
       await settings.setBudgetAlertsEnabled(true);
+      await repository.setCategoryAlertsEnabled(true, categoryId: 1);
       await service.restoreJson(bytes);
       expect(await settings.getBudgetAlertsEnabled(), isFalse);
+      expect((await repository.listCategories()).first.alertsEnabled, isFalse);
+      expect((await repository.listCategories())[1].alertsEnabled, isTrue);
       final legacy = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
       legacy.remove('budgetAlertsEnabled');
+      for (final category in legacy['categories'] as List) {
+        (category as Map).remove('alerts_enabled');
+      }
       await service.restoreJson(utf8.encode(jsonEncode(legacy)));
       expect(await settings.getBudgetAlertsEnabled(), isTrue);
+      expect((await repository.listCategories()).first.alertsEnabled, isTrue);
     },
   );
 
