@@ -8,6 +8,7 @@ import '../../domain/models/budget_usage.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/expense_template.dart';
 import '../../domain/models/home_summary.dart';
+import '../../domain/models/managed_name.dart';
 import '../../domain/models/money.dart';
 import '../../domain/models/monthly_budget.dart';
 import '../../domain/models/payment_method.dart';
@@ -21,6 +22,10 @@ import '../settings/settings_store.dart';
 
 class DuplicateActiveCategoryName implements Exception {
   const DuplicateActiveCategoryName();
+}
+
+class DuplicateActivePaymentMethodName implements Exception {
+  const DuplicateActivePaymentMethodName();
 }
 
 class FinanceRepository {
@@ -117,11 +122,9 @@ class FinanceRepository {
   }
 
   Future<HiddenCategory?> findHiddenCategoryByName(String name) async {
-    final normalized = normalizeCategoryName(name);
+    final normalized = normalizeManagedName(name);
     return (await listHiddenCategories())
-        .where(
-          (item) => normalizeCategoryName(item.category.name) == normalized,
-        )
+        .where((item) => normalizeManagedName(item.category.name) == normalized)
         .firstOrNull;
   }
 
@@ -135,6 +138,35 @@ class FinanceRepository {
       orderBy: 'id',
     );
     return rows.map(PaymentMethod.fromMap).toList();
+  }
+
+  Future<List<HiddenPaymentMethod>> listHiddenPaymentMethods() async {
+    final db = await _database.database;
+    final rows = await db.rawQuery('''
+      SELECT pm.*, (
+        SELECT COUNT(*) FROM transactions t
+        WHERE t.payment_method_id = pm.id AND t.deleted_at IS NULL
+      ) AS transaction_count
+      FROM payment_methods pm
+      WHERE pm.is_active = 0
+      ORDER BY pm.updated_at DESC, pm.id DESC
+      ''');
+    return [
+      for (final row in rows)
+        HiddenPaymentMethod(
+          PaymentMethod.fromMap(row),
+          _asInt(row['transaction_count']),
+        ),
+    ];
+  }
+
+  Future<HiddenPaymentMethod?> findHiddenPaymentMethodByName(
+    String name,
+  ) async {
+    final normalized = normalizeManagedName(name);
+    return (await listHiddenPaymentMethods())
+        .where((item) => normalizeManagedName(item.method.name) == normalized)
+        .firstOrNull;
   }
 
   Future<List<ExpenseTemplate>> listTemplates({
@@ -421,19 +453,38 @@ class FinanceRepository {
     String name, {
     int? excludingId,
   }) async {
-    final normalized = normalizeCategoryName(name);
+    if (await _hasActiveName(db, 'categories', name, excludingId)) {
+      throw const DuplicateActiveCategoryName();
+    }
+  }
+
+  Future<void> _checkActivePaymentMethodName(
+    DatabaseExecutor db,
+    String name, {
+    int? excludingId,
+  }) async {
+    if (await _hasActiveName(db, 'payment_methods', name, excludingId)) {
+      throw const DuplicateActivePaymentMethodName();
+    }
+  }
+
+  Future<bool> _hasActiveName(
+    DatabaseExecutor db,
+    String table,
+    String name,
+    int? excludingId,
+  ) async {
+    final normalized = normalizeManagedName(name);
     final rows = await db.query(
-      'categories',
+      table,
       columns: ['id', 'name'],
       where: 'is_active = 1',
     );
-    if (rows.any(
+    return rows.any(
       (row) =>
           row['id'] != excludingId &&
-          normalizeCategoryName(row['name'] as String) == normalized,
-    )) {
-      throw const DuplicateActiveCategoryName();
-    }
+          normalizeManagedName(row['name'] as String) == normalized,
+    );
   }
 
   Future<void> addCategory({
@@ -546,15 +597,31 @@ class FinanceRepository {
 
   Future<void> setPaymentMethodActive(int id, bool active) async {
     final db = await _database.database;
-    await db.update(
-      'payment_methods',
-      {
-        'is_active': active ? 1 : 0,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.transaction((txn) async {
+      if (active) {
+        final rows = await txn.query(
+          'payment_methods',
+          columns: ['name'],
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (rows.isEmpty) return;
+        await _checkActivePaymentMethodName(
+          txn,
+          rows.single['name'] as String,
+          excludingId: id,
+        );
+      }
+      await txn.update(
+        'payment_methods',
+        {
+          'is_active': active ? 1 : 0,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
     _notifyChanged();
   }
 
@@ -599,22 +666,25 @@ class FinanceRepository {
       throw ArgumentError('Invalid payment method name.');
     }
     final db = await _database.database;
-    final now = DateTime.now().toIso8601String();
-    if (id == null) {
-      await db.insert('payment_methods', {
-        'name': trimmed,
-        'is_active': 1,
-        'created_at': now,
-        'updated_at': now,
-      });
-    } else {
-      await db.update(
-        'payment_methods',
-        {'name': trimmed, 'updated_at': now},
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-    }
+    await db.transaction((txn) async {
+      await _checkActivePaymentMethodName(txn, trimmed, excludingId: id);
+      final now = DateTime.now().toIso8601String();
+      if (id == null) {
+        await txn.insert('payment_methods', {
+          'name': trimmed,
+          'is_active': 1,
+          'created_at': now,
+          'updated_at': now,
+        });
+      } else {
+        await txn.update(
+          'payment_methods',
+          {'name': trimmed, 'updated_at': now},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+    });
     _notifyChanged();
   }
 
@@ -628,7 +698,7 @@ class FinanceRepository {
         limit: 2,
       );
       if (active.length == 1 && active.single['id'] == id) {
-        throw StateError('최소 1개 결제수단를 유지해 주세요.');
+        throw StateError('최소 1개의 결제수단을 유지해 주세요.');
       }
       final references = await txn.rawQuery(
         '''

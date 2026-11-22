@@ -133,6 +133,13 @@ final paymentMethodsProvider = FutureProvider<List<PaymentMethod>>((ref) async {
   return ref.watch(financeRepositoryProvider).listPaymentMethods();
 });
 
+final hiddenPaymentMethodsProvider = FutureProvider<List<HiddenPaymentMethod>>((
+  ref,
+) async {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(financeRepositoryProvider).listHiddenPaymentMethods();
+});
+
 final templatesProvider = FutureProvider<List<ExpenseTemplate>>((ref) async {
   ref.watch(dataRevisionProvider);
   return ref

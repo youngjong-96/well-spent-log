@@ -13,3 +13,10 @@ class PaymentMethod {
     isActive: map['is_active'] == 1,
   );
 }
+
+class HiddenPaymentMethod {
+  const HiddenPaymentMethod(this.method, this.transactionCount);
+
+  final PaymentMethod method;
+  final int transactionCount;
+}

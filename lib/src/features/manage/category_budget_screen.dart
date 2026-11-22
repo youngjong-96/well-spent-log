@@ -7,8 +7,11 @@ import '../../data/repositories/finance_repository.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/category_colors.dart';
 import '../../domain/models/home_summary.dart';
+import '../../domain/models/managed_name.dart';
 import '../../shared/formatters.dart';
 import '../../shared/widgets/budget_progress_tile.dart';
+
+import 'hidden_item_widgets.dart';
 
 const _duplicateNameMessage = '이미 있는 카테고리 이름이에요';
 
@@ -80,28 +83,20 @@ class CategoryBudgetScreen extends ConsumerWidget {
                 _RetryBody(
                   onRetry: () => ref.invalidate(hiddenCategoriesProvider),
                 ),
-              if (hiddenCategories.value case final hidden?
-                  when hidden.isNotEmpty) ...[
-                const Divider(height: 24),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                  child: Text(
-                    '숨긴 카테고리',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+              if (hiddenCategories.value case final hidden?)
+                HiddenItemsSection(
+                  title: '숨긴 카테고리',
+                  items: [
+                    for (final item in hidden)
+                      HiddenItemTile(
+                        leading: _CategoryColorDot(item.category.colorHex),
+                        name: item.category.name,
+                        transactionCount: item.transactionCount,
+                        onRestore: () =>
+                            _restoreCategory(context, ref, item.category.id),
+                      ),
+                  ],
                 ),
-                for (final item in hidden)
-                  ListTile(
-                    leading: _CategoryColorDot(item.category.colorHex),
-                    title: Text(item.category.name),
-                    subtitle: Text('기존 내역 ${item.transactionCount}건'),
-                    trailing: TextButton(
-                      onPressed: () =>
-                          _restoreCategory(context, ref, item.category.id),
-                      child: const Text('다시 사용'),
-                    ),
-                  ),
-              ],
             ],
           ),
         ),
@@ -253,32 +248,18 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
         if (!mounted || !route.isCurrent) return;
         if (active.any(
           (item) =>
-              normalizeCategoryName(item.name) == normalizeCategoryName(name),
+              normalizeManagedName(item.name) == normalizeManagedName(name),
         )) {
           throw const DuplicateActiveCategoryName();
         }
         final hidden = await repository.findHiddenCategoryByName(name);
         if (!mounted || !route.isCurrent) return;
         if (hidden != null) {
-          final reuse = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('다시 사용할까요?'),
-              content: Text(
+          final reuse = await showHiddenItemReuseDialog(
+            context,
+            message:
                 "예전에 쓰던 '${hidden.category.name}' 카테고리가 숨겨져 있어요. "
                 '(기존 내역 ${hidden.transactionCount}건과 예산이 함께 돌아와요)',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('새로 만들기'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('다시 사용'),
-                ),
-              ],
-            ),
           );
           if (!mounted || !route.isCurrent || reuse == null) return;
           if (reuse) {

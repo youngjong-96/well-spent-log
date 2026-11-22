@@ -125,6 +125,100 @@ void main() {
   );
 
   test(
+    'payment methods reject normalized active duplicates on create and rename',
+    () async {
+      await repository.savePaymentMethod(name: ' Travel ');
+      final methods = await repository.listPaymentMethods();
+      final travel = methods.last;
+      final other = methods.first;
+
+      await expectLater(
+        repository.savePaymentMethod(name: '\tTRAVEL '),
+        throwsA(isA<DuplicateActivePaymentMethodName>()),
+      );
+      await expectLater(
+        repository.savePaymentMethod(id: other.id, name: ' travel '),
+        throwsA(isA<DuplicateActivePaymentMethodName>()),
+      );
+      await repository.savePaymentMethod(id: travel.id, name: ' TRAVEL ');
+      expect((await repository.listPaymentMethods()).last.name, 'TRAVEL');
+
+      await repository.setPaymentMethodActive(travel.id, false);
+      await repository.savePaymentMethod(id: other.id, name: 'travel');
+      expect((await repository.listPaymentMethods()).first.name, 'travel');
+      await expectLater(
+        repository.setPaymentMethodActive(travel.id, true),
+        throwsA(isA<DuplicateActivePaymentMethodName>()),
+      );
+    },
+  );
+
+  test(
+    'payment method reuse keeps the original ID, order, name and template',
+    () async {
+      final category = (await repository.listCategories()).first;
+      await repository.savePaymentMethod(name: 'Travel');
+      final original = (await repository.listPaymentMethods()).last;
+      for (var i = 0; i < 3; i++) {
+        final id = await repository.addTransaction(
+          TransactionDraft(
+            type: RecordType.expense,
+            occurredAt: DateTime.now(),
+            amount: 1000,
+            categoryId: category.id,
+            paymentMethodId: original.id,
+          ),
+        );
+        if (i == 2) await repository.softDeleteTransaction(id);
+      }
+      await repository.addTemplate(
+        name: 'Travel lunch',
+        amount: 1000,
+        categoryId: category.id,
+        paymentMethodId: original.id,
+      );
+      await repository.removePaymentMethod(original.id);
+      expect(await repository.listTemplates(), isEmpty);
+
+      final match = (await repository.findHiddenPaymentMethodByName(
+        ' TRAVEL\t',
+      ))!;
+      expect(match.method.id, original.id);
+      expect(match.transactionCount, 2);
+      expect(await repository.findHiddenPaymentMethodByName('unknown'), isNull);
+
+      await repository.savePaymentMethod(name: 'TRAVEL');
+      final separate = (await repository.listPaymentMethods()).last;
+      expect(separate.id, isNot(original.id));
+      expect(await repository.listTemplates(), isEmpty);
+      await repository.setPaymentMethodActive(separate.id, false);
+      expect(
+        (await repository.findHiddenPaymentMethodByName('travel'))?.method.id,
+        separate.id,
+      );
+
+      // A more recently updated method wins even when its ID is lower.
+      await repository.setPaymentMethodActive(original.id, false);
+      expect(
+        (await repository.findHiddenPaymentMethodByName('travel'))?.method.id,
+        original.id,
+      );
+
+      await repository.savePaymentMethod(name: 'Online');
+      final online = (await repository.listPaymentMethods()).last;
+      await repository.setPaymentMethodActive(original.id, true);
+      final restored = await repository.listPaymentMethods();
+      expect(restored[restored.length - 2].id, original.id);
+      expect(restored[restored.length - 2].name, 'Travel');
+      expect(restored.last.id, online.id);
+      expect(
+        (await repository.listTemplates()).single.paymentMethodId,
+        original.id,
+      );
+    },
+  );
+
+  test(
     'home includes all calendar-month spending sorted by amount, net of refunds',
     () async {
       final category = (await repository.listCategories()).first;

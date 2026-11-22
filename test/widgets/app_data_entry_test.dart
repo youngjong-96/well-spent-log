@@ -715,6 +715,9 @@ class _FakeSpendingRepository extends FinanceRepository {
   ];
 
   @override
+  Future<List<HiddenPaymentMethod>> listHiddenPaymentMethods() async => [];
+
+  @override
   Future<void> savePaymentMethod({int? id, required String name}) async {
     if (id == null) {
       _methods.add(

@@ -1,5 +1,3 @@
-String normalizeCategoryName(String name) => name.trim().toLowerCase();
-
 class HiddenCategory {
   const HiddenCategory(this.category, this.transactionCount);
 
