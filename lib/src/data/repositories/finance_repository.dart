@@ -890,11 +890,14 @@ class FinanceRepository {
 
     for (final (alertId, categoryName, threshold) in pending) {
       try {
-        final shown = await _notificationService.showBudgetAlert(
-          id: alertId,
-          categoryName: categoryName,
-          threshold: threshold,
-        );
+        // Re-enabling only affects subsequent budget evaluations.
+        final shown =
+            await _settingsStore.getBudgetAlertsEnabled() &&
+            await _notificationService.showBudgetAlert(
+              id: alertId,
+              categoryName: categoryName,
+              threshold: threshold,
+            );
         if (!shown) {
           await db.delete(
             'alert_history',

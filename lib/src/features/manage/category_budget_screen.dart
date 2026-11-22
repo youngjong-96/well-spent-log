@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers.dart';
+import '../../app/theme/app_theme.dart';
 import '../../domain/models/category.dart';
+import '../../domain/models/category_colors.dart';
 import '../../domain/models/home_summary.dart';
 import '../../shared/formatters.dart';
+import '../../shared/widgets/budget_progress_tile.dart';
 
 class CategoryBudgetScreen extends ConsumerWidget {
   const CategoryBudgetScreen({super.key});
-
-  static const _swatches = ['#D8E8F5', '#84B6E2', '#294761'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -134,87 +135,9 @@ class CategoryBudgetScreen extends ConsumerWidget {
     WidgetRef ref, [
     SpendingCategory? category,
   ]) async {
-    var name = category?.name ?? '';
-    var colorHex = category?.colorHex ?? '#84B6E2';
     final result = await showDialog<(String, String)>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(category == null ? '카테고리 추가' : '카테고리 수정'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextFormField(
-                initialValue: name,
-                autofocus: true,
-                maxLength: 20,
-                onChanged: (value) => name = value,
-                decoration: const InputDecoration(labelText: '이름'),
-              ),
-              const SizedBox(height: 12),
-              const Text('색상'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final swatch in _swatches)
-                    Semantics(
-                      label: '카테고리 색상 $swatch',
-                      selected: colorHex == swatch,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: () {
-                          setDialogState(() => colorHex = swatch);
-                        },
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: colorFromHex(swatch),
-                            shape: BoxShape.circle,
-                            border: colorHex == swatch
-                                ? Border.all(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                    width: 3,
-                                  )
-                                : null,
-                          ),
-                          child: colorHex == swatch
-                              ? Icon(
-                                  Icons.check,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                )
-                              : null,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final trimmedName = name.trim();
-                if (trimmedName.isNotEmpty) {
-                  Navigator.pop(context, (trimmedName, colorHex));
-                }
-              },
-              child: const Text('저장'),
-            ),
-          ],
-        ),
-      ),
+      builder: (context) => _CategoryDialog(category: category),
     );
     if (result == null) {
       return;
@@ -264,6 +187,200 @@ class CategoryBudgetScreen extends ConsumerWidget {
       }
     }
   }
+}
+
+class _CategoryDialog extends StatefulWidget {
+  const _CategoryDialog({this.category});
+
+  final SpendingCategory? category;
+
+  @override
+  State<_CategoryDialog> createState() => _CategoryDialogState();
+}
+
+class _CategoryDialogState extends State<_CategoryDialog> {
+  late String _name = widget.category?.name ?? '';
+  late String _colorHex =
+      normalizeCategoryHex(widget.category?.colorHex ?? '') ??
+      categoryColorPresets.first;
+  late final _hexController = TextEditingController(text: _colorHex);
+  late HSVColor _hsv = _hsvFromHex(_colorHex);
+  late bool _custom = !categoryColorPresets.contains(_colorHex);
+
+  HSVColor _hsvFromHex(String hex) => HSVColor.fromColor(
+    Color(0xFF000000 | int.parse(hex.substring(1), radix: 16)),
+  );
+
+  @override
+  void dispose() {
+    _hexController.dispose();
+    super.dispose();
+  }
+
+  void _selectPreset(String hex) => setState(() {
+    _custom = false;
+    _hsv = _hsvFromHex(hex);
+    _colorHex = _hexController.text = hex;
+  });
+
+  void _updateHex(String text) {
+    setState(() {
+      final hex = normalizeCategoryHex(text);
+      if (hex == null) return;
+      _hsv = _hsvFromHex(hex);
+      _colorHex = hex;
+    });
+  }
+
+  void _updateSliders(HSVColor hsv) => setState(() {
+    _hsv = hsv;
+    final rgb = hsv.toColor().toARGB32() & 0xFFFFFF;
+    _colorHex = _hexController.text =
+        '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = colorFromHex(_colorHex);
+    final light = AppTheme.light;
+    final dark = AppTheme.dark;
+    final invalidHex =
+        _custom && normalizeCategoryHex(_hexController.text) == null;
+    final lowContrast =
+        BudgetProgressBar.usesFallback(light, color) ||
+        BudgetProgressBar.usesFallback(dark, color);
+    return AlertDialog(
+      scrollable: true,
+      title: Text(widget.category == null ? '카테고리 추가' : '카테고리 수정'),
+      content: SizedBox(
+        width: 300,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              initialValue: _name,
+              maxLength: 20,
+              onChanged: (value) => setState(() => _name = value),
+              decoration: const InputDecoration(labelText: '이름'),
+            ),
+            const Text('색상'),
+            const SizedBox(height: 6),
+            Wrap(
+              children: [
+                for (final hex in categoryColorPresets)
+                  Semantics(
+                    selected: !_custom && _colorHex == hex,
+                    child: IconButton(
+                      tooltip: '카테고리 색상 $hex',
+                      onPressed: () => _selectPreset(hex),
+                      icon: CircleAvatar(
+                        radius: 15,
+                        backgroundColor: colorFromHex(hex),
+                        foregroundColor: Colors.white,
+                        child: !_custom && _colorHex == hex
+                            ? const Icon(Icons.check, size: 18)
+                            : null,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            FilterChip(
+              label: const Text('직접 선택'),
+              selected: _custom,
+              onSelected: (selected) => setState(() {
+                _custom = selected;
+                _hexController.text = _colorHex;
+              }),
+            ),
+            if (_custom) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _hexController,
+                autocorrect: false,
+                textCapitalization: TextCapitalization.characters,
+                onChanged: _updateHex,
+                decoration: InputDecoration(
+                  labelText: 'HEX 색상',
+                  hintText: '#RRGGBB',
+                  errorText: invalidHex ? '색상 코드 6자리를 입력해 주세요.' : null,
+                ),
+              ),
+              _slider('색조', _hsv.hue, 360, (value) {
+                _updateSliders(_hsv.withHue(value));
+              }),
+              _slider('채도', _hsv.saturation, 1, (value) {
+                _updateSliders(_hsv.withSaturation(value));
+              }),
+              _slider('밝기', _hsv.value, 1, (value) {
+                _updateSliders(_hsv.withValue(value));
+              }),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _preview(light, '라이트 모드', color)),
+                const SizedBox(width: 8),
+                Expanded(child: _preview(dark, '다크 모드', color)),
+              ],
+            ),
+            if (lowContrast)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text('배경과 비슷해서 막대가 잘 안 보일 수 있어요. 이 경우 기본 색으로 보여요.'),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('취소'),
+        ),
+        FilledButton(
+          onPressed: invalidHex || _name.trim().isEmpty
+              ? null
+              : () => Navigator.pop(context, (_name.trim(), _colorHex)),
+          child: const Text('저장'),
+        ),
+      ],
+    );
+  }
+
+  Widget _slider(
+    String label,
+    double value,
+    double max,
+    ValueChanged<double> onChanged,
+  ) => Row(
+    children: [
+      Text(label),
+      Expanded(
+        child: Semantics(
+          label: label,
+          child: Slider(value: value, max: max, onChanged: onChanged),
+        ),
+      ),
+    ],
+  );
+
+  Widget _preview(ThemeData theme, String label, Color color) => Theme(
+    data: theme,
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 6),
+            BudgetProgressBar(value: 0.42, color: color),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _CategoryBudgetTile extends StatelessWidget {

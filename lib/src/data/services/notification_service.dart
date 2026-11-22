@@ -1,11 +1,20 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
-  Future<void>? _permissionRequest;
+  static const _settingsChannel = MethodChannel(
+    'well_spent_log/notification_settings',
+  );
+
+  bool get canOpenNotificationSettings =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  Future<void> openNotificationSettings() =>
+      _settingsChannel.invokeMethod<void>('open');
 
   Future<void> initialize() async {
     if (_initialized || kIsWeb) {
@@ -31,17 +40,7 @@ class NotificationService {
   }) async {
     if (kIsWeb) return false;
     await initialize();
-    if (!await _hasPermission()) {
-      final request = _permissionRequest ??= _requestPermission();
-      try {
-        await request;
-      } catch (_) {
-        // A platform error does not count as a completed permission request.
-        if (identical(_permissionRequest, request)) _permissionRequest = null;
-        rethrow;
-      }
-      if (!await _hasPermission()) return false;
-    }
+    if (!await hasPermission()) return false;
     await _plugin.show(
       id: id,
       title: '$categoryName 예산 알림',
@@ -62,7 +61,7 @@ class NotificationService {
     return true;
   }
 
-  Future<bool> _hasPermission() async {
+  Future<bool> hasPermission() async {
     return switch (defaultTargetPlatform) {
       TargetPlatform.android =>
         await _plugin
@@ -83,7 +82,9 @@ class NotificationService {
     };
   }
 
-  Future<void> _requestPermission() async {
+  Future<void> requestPermission() async {
+    if (kIsWeb || await hasPermission()) return;
+    await initialize();
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         await _plugin

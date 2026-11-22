@@ -23,8 +23,6 @@ class AppColors {
   static const warning80 = navyBlue;
   static const overBudget = navyBlue;
   static const info = navyBlue;
-
-  static const categoryPalette = [softBlue, skyBlue, navyBlue];
 }
 
 class AppDarkColors {

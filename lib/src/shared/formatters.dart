@@ -82,13 +82,19 @@ Color visibleForeground(Color color, Color background, Color fallback) {
 }
 
 Color colorFromHex(String hex) {
-  final normalized = hex.replaceFirst('#', '');
-  final value = int.tryParse(normalized, radix: 16) ?? 0;
+  final normalized = normalizeCategoryHex(hex);
+  if (normalized == null) return AppColors.primary;
+  final value = int.parse(normalized.substring(1), radix: 16);
   const currentPalette = {
     0xD8E8F5: AppColors.softBlue,
     0x84B6E2: AppColors.skyBlue,
     0x294761: AppColors.navyBlue,
   };
-  return currentPalette[value] ??
-      AppColors.categoryPalette[value % AppColors.categoryPalette.length];
+  return currentPalette[value] ?? Color(0xFF000000 | value);
+}
+
+String? normalizeCategoryHex(String input) {
+  final hex = input.trim();
+  if (!RegExp(r'^#?[0-9a-fA-F]{6}$').hasMatch(hex)) return null;
+  return '#${hex.replaceFirst('#', '').toUpperCase()}';
 }

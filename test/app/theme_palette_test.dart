@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:well_spent_log/src/app/theme/app_colors.dart';
 import 'package:well_spent_log/src/app/theme/app_theme.dart';
+import 'package:well_spent_log/src/domain/models/category_colors.dart';
+import 'package:well_spent_log/src/shared/widgets/budget_progress_tile.dart';
 import 'package:well_spent_log/src/shared/formatters.dart';
 
 void main() {
@@ -181,21 +183,37 @@ void main() {
     );
   });
 
-  test(
-    'legacy category colors are normalized to the blue category palette',
-    () {
-      for (final legacyColor in const [
-        '#7A5CFA',
-        '#8B6F47',
-        '#007E9E',
-        '#4C7C59',
-        '#B04A82',
-        '#D8584A',
-      ]) {
-        expect(AppColors.categoryPalette, contains(colorFromHex(legacyColor)));
+  test('category hex renders RGB and preserves the three legacy aliases', () {
+    expect(colorFromHex('#7a5cfa'), const Color(0xFF7A5CFA));
+    expect(colorFromHex('123456'), const Color(0xFF123456));
+    expect(colorFromHex('#D8E8F5'), AppColors.softBlue);
+    expect(colorFromHex('#84B6E2'), AppColors.skyBlue);
+    expect(colorFromHex('#294761'), AppColors.navyBlue);
+  });
+
+  test('all category presets contrast with both tracks and surfaces', () {
+    expect(categoryColorPresets.toSet(), hasLength(14));
+    for (final theme in [AppTheme.light, AppTheme.dark]) {
+      for (final hex in categoryColorPresets) {
+        final color = colorFromHex(hex);
+        for (final background in [
+          theme.colorScheme.surface,
+          theme.progressIndicatorTheme.linearTrackColor!,
+        ]) {
+          expect(
+            _contrast(color, background),
+            greaterThanOrEqualTo(3),
+            reason: hex,
+          );
+        }
+        expect(
+          BudgetProgressBar.usesFallback(theme, color),
+          isFalse,
+          reason: hex,
+        );
       }
-    },
-  );
+    }
+  });
 }
 
 double _contrast(Color first, Color second) {

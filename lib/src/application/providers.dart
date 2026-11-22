@@ -81,6 +81,10 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
 });
 
+final budgetAlertsEnabledProvider = FutureProvider<bool>((ref) {
+  return ref.watch(settingsStoreProvider).getBudgetAlertsEnabled();
+});
+
 final backupServiceProvider = Provider<BackupService>((ref) {
   return BackupService(ref.watch(appDatabaseProvider));
 });

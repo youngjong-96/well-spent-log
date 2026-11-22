@@ -17,9 +17,28 @@ import 'package:well_spent_log/src/data/settings/settings_store.dart';
 import 'package:well_spent_log/src/domain/models/transaction_draft.dart';
 import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 import 'package:well_spent_log/src/features/manage/manage_screen.dart';
+import 'package:well_spent_log/src/features/manage/category_budget_screen.dart';
 import 'package:well_spent_log/src/features/onboarding/onboarding_screen.dart';
 import 'package:well_spent_log/src/features/onboarding/first_record_tour.dart';
 import 'package:well_spent_log/src/features/transaction/transaction_form_sheet.dart';
+
+class _AlertPermissions extends NotificationService {
+  bool granted = true;
+  int requests = 0;
+  int settingsVisits = 0;
+
+  @override
+  bool get canOpenNotificationSettings => true;
+
+  @override
+  Future<bool> hasPermission() async => granted;
+
+  @override
+  Future<void> requestPermission() async => requests++;
+
+  @override
+  Future<void> openNotificationSettings() async => settingsVisits++;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -45,7 +64,11 @@ void main() {
     await database.close();
   });
 
-  Future<void> mount(WidgetTester tester, Widget child) async {
+  Future<void> mount(
+    WidgetTester tester,
+    Widget child, {
+    NotificationService? notificationService,
+  }) async {
     tester.view.physicalSize = const Size(384, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -55,10 +78,19 @@ void main() {
         overrides: [
           financeRepositoryProvider.overrideWithValue(repository),
           appDatabaseProvider.overrideWithValue(database),
+          if (notificationService != null)
+            notificationServiceProvider.overrideWithValue(notificationService),
         ],
         child: MaterialApp(theme: AppTheme.light, home: child),
       ),
     );
+    await settle(tester);
+  }
+
+  Future<void> tapLabel(WidgetTester tester, String label) async {
+    final target = find.text(label).last;
+    await tester.ensureVisible(target);
+    await tester.tap(target);
     await settle(tester);
   }
 
@@ -67,6 +99,72 @@ void main() {
     expect(find.text('쓰면 바로\n기록하자!'), findsOneWidget);
     expect(find.text('백업에서 복원하기'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
+  test('온보딩에 사용하는 기본 카테고리 색상이 서로 다르다', () async {
+    final categories = await repository.listCategories();
+    expect(categories, hasLength(8));
+    expect(
+      categories.map((category) => category.colorHex).toSet(),
+      hasLength(8),
+    );
+  });
+
+  testWidgets('예산 알림을 켜고 끄며 권한과 복귀 상태를 표시한다', (tester) async {
+    final permissions = _AlertPermissions();
+    await mount(
+      tester,
+      const Scaffold(body: ManageScreen()),
+      notificationService: permissions,
+    );
+    final tile = find.byType(SwitchListTile);
+    bool enabled() => tester.widget<SwitchListTile>(tile).value;
+    expect(enabled(), isTrue);
+    expect(find.text('설정 열기'), findsNothing);
+
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(enabled(), isFalse);
+    expect(await SettingsStore().getBudgetAlertsEnabled(), isFalse);
+
+    permissions.granted = false;
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(permissions.requests, 1);
+    expect(enabled(), isTrue);
+    expect(find.text('알림 권한이 꺼져 있어요'), findsOneWidget);
+    await tester.tap(find.text('설정 열기'));
+    expect(permissions.settingsVisits, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    permissions.granted = true;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(enabled(), isTrue);
+    expect(find.text('설정 열기'), findsNothing);
+  });
+
+  testWidgets('잘못된 HEX를 안내하고 대비가 낮은 직접 선택 색상도 저장한다', (tester) async {
+    await mount(tester, const CategoryBudgetScreen());
+    await tapLabel(tester, '카테고리');
+    await tester.enterText(find.widgetWithText(TextFormField, '이름'), '맞춤 색상');
+    await tapLabel(tester, '직접 선택');
+    final hex = find.widgetWithText(TextField, 'HEX 색상');
+    await tester.enterText(hex, '#00zz00');
+    await tester.pumpAndSettle();
+    expect(find.text('색상 코드 6자리를 입력해 주세요.'), findsOneWidget);
+    final save = find.widgetWithText(FilledButton, '저장');
+    expect(tester.widget<FilledButton>(save).onPressed, isNull);
+
+    await tester.enterText(hex, 'fffffe');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('배경과 비슷해서'), findsOneWidget);
+    await tapLabel(tester, '저장');
+    final categories = await tester.runAsync(repository.listCategories);
+    expect(
+      categories!.singleWhere((category) => category.name == '맞춤 색상').colorHex,
+      '#FFFFFE',
+    );
   });
 
   testWidgets('이전 달 거래가 있으면 자동 완료하고 홈을 표시한다', (tester) async {
@@ -116,13 +214,6 @@ void main() {
     expect(find.text('1/4'), findsOneWidget);
     expect(find.byType(OutlinedButton), findsWidgets);
   });
-
-  Future<void> tapLabel(WidgetTester tester, String label) async {
-    final target = find.text(label).last;
-    await tester.ensureVisible(target);
-    await tester.tap(target);
-    await settle(tester);
-  }
 
   Future<void> reachTour(WidgetTester tester, {bool setBudget = false}) async {
     await tapLabel(tester, '시작하기');

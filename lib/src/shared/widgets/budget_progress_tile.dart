@@ -26,12 +26,8 @@ class BudgetProgressTile extends StatelessWidget {
       >= 100 => scheme.secondary,
       >= 80 => scheme.secondary,
       >= 50 => scheme.primary,
-      _ =>
-        Theme.of(context).brightness == Brightness.dark
-            ? scheme.primary
-            : colorFromHex(usage.colorHex),
+      _ => colorFromHex(usage.colorHex),
     };
-    final trackColor = progressColor.withValues(alpha: 0.12);
     final valueText = showAmount
         ? '${usage.spentAmount.format()} / ${usage.budgetAmount.format()}'
         : '${usage.usedPercent}%';
@@ -87,17 +83,7 @@ class BudgetProgressTile extends StatelessWidget {
               const SizedBox(height: 8),
               Semantics(
                 label: '${usage.categoryName} 예산 ${usage.usedPercent}% 사용',
-                child: LinearProgressIndicator(
-                  value: progress,
-                  color: visibleForeground(
-                    progressColor,
-                    Color.alphaBlend(trackColor, scheme.surface),
-                    scheme.primary,
-                  ),
-                  backgroundColor: trackColor,
-                  minHeight: 8,
-                  borderRadius: BorderRadius.circular(4),
-                ),
+                child: BudgetProgressBar(value: progress, color: progressColor),
               ),
               if (usage.budgetAmount.amount == 0) ...[
                 const SizedBox(height: 6),
@@ -118,6 +104,45 @@ class BudgetProgressTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class BudgetProgressBar extends StatelessWidget {
+  const BudgetProgressBar({
+    super.key,
+    required this.value,
+    required this.color,
+  });
+
+  final double value;
+  final Color color;
+
+  static bool usesFallback(ThemeData theme, Color color) =>
+      _visibleColor(theme, color) != color;
+
+  static Color _trackColor(ThemeData theme) =>
+      theme.progressIndicatorTheme.linearTrackColor ??
+      theme.colorScheme.surfaceContainerHigh;
+
+  static Color _visibleColor(ThemeData theme, Color color) {
+    final scheme = theme.colorScheme;
+    return visibleForeground(
+      visibleForeground(color, scheme.surface, scheme.primary),
+      _trackColor(theme),
+      scheme.primary,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return LinearProgressIndicator(
+      value: value,
+      color: _visibleColor(theme, color),
+      backgroundColor: _trackColor(theme),
+      minHeight: 8,
+      borderRadius: BorderRadius.circular(4),
     );
   }
 }

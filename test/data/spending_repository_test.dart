@@ -174,6 +174,53 @@ void main() {
     expect(alerts.thresholds, [50, 80, 50]);
   });
 
+  test(
+    'alert preference defaults to on and persists across store instances',
+    () async {
+      expect(await SettingsStore().getBudgetAlertsEnabled(), isTrue);
+      await SettingsStore().setBudgetAlertsEnabled(false);
+      expect(await SettingsStore().getBudgetAlertsEnabled(), isFalse);
+    },
+  );
+
+  test(
+    'alerts are suppressed while off without consuming thresholds',
+    () async {
+      final settings = SettingsStore();
+      await repository.setBudget(categoryId: 1, amount: 10000, anchor: month);
+      await settings.setBudgetAlertsEnabled(false);
+      await repository.addTransaction(draft(8000));
+      final db = await database.database;
+      expect(alerts.thresholds, isEmpty);
+      expect(await db.query('alert_history'), isEmpty);
+      await settings.setBudgetAlertsEnabled(true);
+      expect(alerts.thresholds, isEmpty);
+      await repository.addTransaction(draft(1));
+      await repository.addTransaction(draft(1));
+      expect(alerts.thresholds, [50, 80]);
+    },
+  );
+
+  test(
+    'alert preference round trips and older backups default to on',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('alert_backup');
+      addTearDown(() => directory.delete(recursive: true));
+      final service = BackupService(database, exportDirectory: directory);
+      final settings = SettingsStore();
+      await settings.setBudgetAlertsEnabled(false);
+      final file = await service.createJsonBackup();
+      final bytes = await file.readAsBytes();
+      await settings.setBudgetAlertsEnabled(true);
+      await service.restoreJson(bytes);
+      expect(await settings.getBudgetAlertsEnabled(), isFalse);
+      final legacy = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      legacy.remove('budgetAlertsEnabled');
+      await service.restoreJson(utf8.encode(jsonEncode(legacy)));
+      expect(await settings.getBudgetAlertsEnabled(), isTrue);
+    },
+  );
+
   test('expired soft-deleted originals detach surviving refunds', () async {
     final id = await repository.addTransaction(draft(5000));
     await repository.addTransaction(

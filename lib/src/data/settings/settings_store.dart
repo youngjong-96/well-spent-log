@@ -26,8 +26,18 @@ class SettingsStore {
   static const _lastCategoryIdKey = 'last_category_id';
   static const _lastPaymentMethodIdKey = 'last_payment_method_id';
   static const _themeModeKey = 'theme_mode';
+  static const _budgetAlertsEnabledKey = 'budget_alerts_enabled';
 
   Future<SharedPreferences> get _preferences => SharedPreferences.getInstance();
+
+  Future<bool> getBudgetAlertsEnabled() async =>
+      (await _preferences).getBool(_budgetAlertsEnabledKey) ?? true;
+
+  Future<void> setBudgetAlertsEnabled(bool enabled) async {
+    if (!await (await _preferences).setBool(_budgetAlertsEnabledKey, enabled)) {
+      throw StateError('Could not save budget alert preference.');
+    }
+  }
 
   Future<bool> getWeeklyTotalsVisible() async {
     return (await _preferences).getBool(_weeklyTotalsVisibleKey) ?? true;

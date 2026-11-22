@@ -6,7 +6,9 @@ import '../../application/providers.dart';
 import '../onboarding/onboarding_screen.dart';
 
 class ManageScreen extends StatelessWidget {
-  const ManageScreen({super.key});
+  const ManageScreen({super.key, this.visible = true});
+
+  final bool visible;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +42,7 @@ class ManageScreen extends StatelessWidget {
             ),
             const Divider(height: 32),
             const _SectionLabel('예산과 기록'),
+            _BudgetAlertsTile(visible: visible),
             _ManageTile(
               icon: Icons.category_outlined,
               title: '카테고리와 예산',
@@ -76,6 +79,120 @@ class ManageScreen extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _BudgetAlertsTile extends ConsumerStatefulWidget {
+  const _BudgetAlertsTile({required this.visible});
+
+  final bool visible;
+
+  @override
+  ConsumerState<_BudgetAlertsTile> createState() => _BudgetAlertsTileState();
+}
+
+class _BudgetAlertsTileState extends ConsumerState<_BudgetAlertsTile> {
+  late final AppLifecycleListener _lifecycle;
+  Future<bool>? _permission;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onResume: _refreshPermission);
+    if (widget.visible) _refreshPermission();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BudgetAlertsTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visible && !oldWidget.visible) _refreshPermission();
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  void _refreshPermission() {
+    if (!widget.visible) return;
+    setState(() {
+      _permission = ref.read(notificationServiceProvider).hasPermission();
+    });
+  }
+
+  Future<void> _setEnabled(bool enabled) async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(settingsStoreProvider).setBudgetAlertsEnabled(enabled);
+      if (!mounted) return;
+      ref.invalidate(budgetAlertsEnabledProvider);
+      if (enabled) {
+        await ref.read(notificationServiceProvider).requestPermission();
+      }
+    } catch (_) {
+      if (mounted) _showError('예산 알림 설정을 변경하지 못했어요.');
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+        _refreshPermission();
+      }
+    }
+  }
+
+  Future<void> _openSettings() async {
+    try {
+      await ref.read(notificationServiceProvider).openNotificationSettings();
+    } catch (_) {
+      if (mounted) _showError('휴대전화 설정에서 이 앱의 알림을 켜 주세요.');
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = ref.watch(budgetAlertsEnabledProvider);
+    return FutureBuilder<bool>(
+      future: _permission,
+      builder: (context, permission) {
+        final needsPermission =
+            enabled.value == true &&
+            (permission.hasError || permission.data == false);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            SwitchListTile(
+              secondary: const Icon(Icons.notifications_outlined),
+              title: const Text('예산 알림'),
+              subtitle: Text(
+                needsPermission
+                    ? '알림 권한이 꺼져 있어요'
+                    : '50% · 80% · 100%에 알려드려요',
+              ),
+              value: enabled.value ?? false,
+              onChanged: _busy || !enabled.hasValue ? null : _setEnabled,
+            ),
+            if (needsPermission &&
+                ref
+                    .watch(notificationServiceProvider)
+                    .canOpenNotificationSettings)
+              Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: TextButton(
+                  onPressed: _busy ? null : _openSettings,
+                  child: const Text('설정 열기'),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
