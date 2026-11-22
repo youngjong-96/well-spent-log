@@ -173,6 +173,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     await _run(() async {
       final bytes = await selected.readAsBytes();
       await ref.read(backupServiceProvider).restoreJson(bytes);
+      if (mounted) ref.invalidate(budgetAlertsEnabledProvider);
       await ref.read(financeRepositoryProvider).refreshAfterRestore();
       await ref.read(settingsStoreProvider).setOnboardingCompleted();
       ref.invalidate(onboardingNeededProvider);

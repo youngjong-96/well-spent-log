@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../application/providers.dart';
+import '../../shared/formatters.dart';
 import '../onboarding/onboarding_screen.dart';
 
 class ManageScreen extends StatelessWidget {
-  const ManageScreen({super.key});
+  const ManageScreen({super.key, this.visible = true});
+
+  final bool visible;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +43,8 @@ class ManageScreen extends StatelessWidget {
             ),
             const Divider(height: 32),
             const _SectionLabel('예산과 기록'),
+            _BudgetAlertsTile(visible: visible),
+            const _CategoryAlertsSummary(),
             _ManageTile(
               icon: Icons.category_outlined,
               title: '카테고리와 예산',
@@ -76,6 +81,231 @@ class ManageScreen extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _BudgetAlertsTile extends ConsumerStatefulWidget {
+  const _BudgetAlertsTile({required this.visible});
+
+  final bool visible;
+
+  @override
+  ConsumerState<_BudgetAlertsTile> createState() => _BudgetAlertsTileState();
+}
+
+class _BudgetAlertsTileState extends ConsumerState<_BudgetAlertsTile> {
+  late final AppLifecycleListener _lifecycle;
+  Future<bool>? _permission;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onResume: _refreshPermission);
+    if (widget.visible) _refreshPermission();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BudgetAlertsTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visible && !oldWidget.visible) _refreshPermission();
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  void _refreshPermission() {
+    if (!widget.visible) return;
+    setState(() {
+      _permission = ref.read(notificationServiceProvider).hasPermission();
+    });
+  }
+
+  Future<void> _setEnabled(bool enabled) async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(settingsStoreProvider).setBudgetAlertsEnabled(enabled);
+      if (!mounted) return;
+      ref.invalidate(budgetAlertsEnabledProvider);
+      if (enabled) {
+        await ref.read(notificationServiceProvider).requestPermission();
+      }
+    } catch (_) {
+      if (mounted) _showError('예산 알림 설정을 변경하지 못했어요.');
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+        _refreshPermission();
+      }
+    }
+  }
+
+  Future<void> _openSettings() async {
+    try {
+      await ref.read(notificationServiceProvider).openNotificationSettings();
+    } catch (_) {
+      if (mounted) _showError('휴대전화 설정에서 이 앱의 알림을 켜 주세요.');
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = ref.watch(budgetAlertsEnabledProvider);
+    return FutureBuilder<bool>(
+      future: _permission,
+      builder: (context, permission) {
+        final needsPermission =
+            enabled.value == true &&
+            (permission.hasError || permission.data == false);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            SwitchListTile(
+              secondary: const Icon(Icons.notifications_outlined),
+              title: const Text('예산 알림'),
+              subtitle: Text(
+                needsPermission
+                    ? '알림 권한이 꺼져 있어요'
+                    : '50% · 80% · 100%에 알려드려요',
+              ),
+              value: enabled.value ?? false,
+              onChanged: _busy || !enabled.hasValue ? null : _setEnabled,
+            ),
+            if (needsPermission &&
+                ref
+                    .watch(notificationServiceProvider)
+                    .canOpenNotificationSettings)
+              Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: TextButton(
+                  onPressed: _busy ? null : _openSettings,
+                  child: const Text('설정 열기'),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CategoryAlertsSummary extends ConsumerWidget {
+  const _CategoryAlertsSummary();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(budgetAlertsEnabledProvider).value != true) {
+      return const SizedBox.shrink();
+    }
+    final categories = ref.watch(categoriesProvider).value;
+    if (categories == null) return const SizedBox.shrink();
+    final enabled = categories.where((category) => category.alertsEnabled);
+    return ListTile(
+      leading: const Icon(Icons.tune),
+      title: Text('카테고리별 알림 · ${categories.length}개 중 ${enabled.length}개 켜짐'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const _CategoryAlertsScreen()),
+      ),
+    );
+  }
+}
+
+class _CategoryAlertsScreen extends ConsumerStatefulWidget {
+  const _CategoryAlertsScreen();
+
+  @override
+  ConsumerState<_CategoryAlertsScreen> createState() =>
+      _CategoryAlertsScreenState();
+}
+
+class _CategoryAlertsScreenState extends ConsumerState<_CategoryAlertsScreen> {
+  bool _saving = false;
+
+  Future<void> _setEnabled(bool enabled, {int? categoryId}) async {
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(financeRepositoryProvider)
+          .setCategoryAlertsEnabled(enabled, categoryId: categoryId);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('카테고리별 알림 설정을 변경하지 못했어요.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = ref.watch(categoriesProvider);
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('카테고리별 알림')),
+      body: categories.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, _) => Center(
+          child: TextButton(
+            onPressed: () => ref.invalidate(categoriesProvider),
+            child: const Text('다시 시도'),
+          ),
+        ),
+        data: (items) => ListView(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  TextButton(
+                    onPressed:
+                        _saving || items.every((item) => item.alertsEnabled)
+                        ? null
+                        : () => _setEnabled(true),
+                    child: const Text('모두 켜기'),
+                  ),
+                  TextButton(
+                    onPressed:
+                        _saving || items.every((item) => !item.alertsEnabled)
+                        ? null
+                        : () => _setEnabled(false),
+                    child: const Text('모두 끄기'),
+                  ),
+                ],
+              ),
+            ),
+            for (final category in items)
+              SwitchListTile(
+                secondary: CircleAvatar(
+                  radius: 9,
+                  backgroundColor: visibleForeground(
+                    colorFromHex(category.colorHex),
+                    theme.scaffoldBackgroundColor,
+                    theme.colorScheme.primary,
+                  ),
+                ),
+                title: Text(category.name),
+                value: category.alertsEnabled,
+                onChanged: _saving
+                    ? null
+                    : (value) => _setEnabled(value, categoryId: category.id),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

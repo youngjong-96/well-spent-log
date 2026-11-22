@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/providers.dart';
 import '../../domain/models/budget_usage.dart';
 import '../../domain/models/category.dart';
+import '../../domain/models/category_colors.dart';
 import '../../domain/models/home_summary.dart';
 import '../../domain/models/payment_method.dart';
 import '../../domain/models/transaction_record.dart';
@@ -149,9 +150,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Future<void> _finish({bool skipped = false}) => _run(() async {
-    final settings = ref.read(settingsStoreProvider);
-    await settings.setFirstRecordHintPending(skipped && !widget.replay);
-    await settings.setOnboardingCompleted();
+    if (!widget.replay) {
+      final settings = ref.read(settingsStoreProvider);
+      await settings.setFirstRecordHintPending(skipped);
+      await settings.setOnboardingCompleted();
+    }
     if (mounted) widget.onFinished();
   });
 
@@ -212,9 +215,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
     if (!mounted || name == null || name.trim().isEmpty) return;
     await _run(() async {
+      final usedColors = _categories.map((item) => item.colorHex).toSet();
+      final color = categoryColorPresets.firstWhere(
+        (preset) => !usedColors.contains(preset),
+        orElse: () =>
+            categoryColorPresets[_categories.length %
+                categoryColorPresets.length],
+      );
       await ref
           .read(financeRepositoryProvider)
-          .addCategory(name: name.trim(), colorHex: '#2F6FEB');
+          .addCategory(name: name.trim(), colorHex: color);
       if (mounted) await _reloadSettings();
     });
   }

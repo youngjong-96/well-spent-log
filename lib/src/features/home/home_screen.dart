@@ -6,6 +6,7 @@ import '../../domain/models/budget_usage.dart';
 import '../../domain/models/transaction_record.dart';
 import '../../shared/category_icon.dart';
 import '../../shared/formatters.dart';
+import '../../shared/widgets/budget_progress_tile.dart';
 import '../../shared/widgets/transaction_list_tile.dart';
 import '../transaction/transaction_form_sheet.dart';
 
@@ -658,10 +659,7 @@ class _BudgetCategoryCard extends StatelessWidget {
       >= 100 => scheme.secondary,
       >= 80 => scheme.secondary,
       >= 50 => scheme.primary,
-      _ =>
-        Theme.of(context).brightness == Brightness.dark
-            ? scheme.primary
-            : colorFromHex(usage.colorHex),
+      _ => colorFromHex(usage.colorHex),
     };
     final valueText = showAmount
         ? '${usage.spentAmount.format()} / ${usage.budgetAmount.format()}'
@@ -729,13 +727,7 @@ class _BudgetCategoryCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: ratio,
-                color: progressColor,
-                backgroundColor: scheme.surfaceContainerHighest,
-                minHeight: 8,
-                borderRadius: BorderRadius.circular(4),
-              ),
+              BudgetProgressBar(value: ratio, color: progressColor),
               const Spacer(),
               const Divider(height: 1),
               Align(

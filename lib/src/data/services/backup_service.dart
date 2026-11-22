@@ -30,6 +30,7 @@ class BackupService {
     final data = <String, Object?>{
       'schemaVersion': schemaVersion,
       'exportedAt': DateTime.now().toIso8601String(),
+      'budgetAlertsEnabled': await SettingsStore().getBudgetAlertsEnabled(),
     };
     await db.transaction((txn) async {
       for (final table in _tables) {
@@ -110,6 +111,10 @@ class BackupService {
     final data = decoded['schemaVersion'] == 1
         ? convertLegacyData(decoded)
         : decoded;
+    final budgetAlertsEnabled = decoded['budgetAlertsEnabled'] ?? true;
+    if (budgetAlertsEnabled is! bool) {
+      throw const FormatException('예산 알림 설정이 올바르지 않아요.');
+    }
     for (final table in _tables) {
       if (data[table] is! List) {
         throw FormatException('$table 데이터가 없습니다.');
@@ -129,6 +134,12 @@ class BackupService {
             throw FormatException('$table 데이터 형식이 잘못됐습니다.');
           }
           final values = Map<String, Object?>.from(row);
+          if (table == 'categories') {
+            final enabled = values.putIfAbsent('alerts_enabled', () => 1);
+            if (enabled is! int || (enabled != 0 && enabled != 1)) {
+              throw const FormatException('카테고리별 알림 설정이 올바르지 않아요.');
+            }
+          }
           if (table == 'transactions') {
             final date = values['occurred_at'];
             final amount = values['amount'];
@@ -154,6 +165,7 @@ class BackupService {
     });
     await SettingsStore().setOnboardingCompleted();
     await SettingsStore().setFirstRecordHintPending(false);
+    await SettingsStore().setBudgetAlertsEnabled(budgetAlertsEnabled);
   }
 
   Future<List<Map<String, Object?>>> _rowsForExport(

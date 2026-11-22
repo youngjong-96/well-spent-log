@@ -81,6 +81,10 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
 });
 
+final budgetAlertsEnabledProvider = FutureProvider<bool>((ref) {
+  return ref.watch(settingsStoreProvider).getBudgetAlertsEnabled();
+});
+
 final backupServiceProvider = Provider<BackupService>((ref) {
   return BackupService(ref.watch(appDatabaseProvider));
 });
@@ -117,14 +121,30 @@ final categoriesProvider = FutureProvider<List<SpendingCategory>>((ref) async {
   return ref.watch(financeRepositoryProvider).listCategories();
 });
 
+final hiddenCategoriesProvider = FutureProvider<List<HiddenCategory>>((
+  ref,
+) async {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(financeRepositoryProvider).listHiddenCategories();
+});
+
 final paymentMethodsProvider = FutureProvider<List<PaymentMethod>>((ref) async {
   ref.watch(dataRevisionProvider);
   return ref.watch(financeRepositoryProvider).listPaymentMethods();
 });
 
+final hiddenPaymentMethodsProvider = FutureProvider<List<HiddenPaymentMethod>>((
+  ref,
+) async {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(financeRepositoryProvider).listHiddenPaymentMethods();
+});
+
 final templatesProvider = FutureProvider<List<ExpenseTemplate>>((ref) async {
   ref.watch(dataRevisionProvider);
-  return ref.watch(financeRepositoryProvider).listTemplates();
+  return ref
+      .watch(financeRepositoryProvider)
+      .listTemplates(includeUnavailable: true);
 });
 
 final monthTransactionsProvider =

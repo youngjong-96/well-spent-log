@@ -16,14 +16,17 @@ import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 class _Alerts extends NotificationService {
   final thresholds = <int>[];
   bool fail = false;
+  bool allowed = true;
   @override
-  Future<void> showBudgetAlert({
+  Future<bool> showBudgetAlert({
     required int id,
     required String categoryName,
     required int threshold,
   }) async {
     if (fail) throw StateError('Notification unavailable');
+    if (!allowed) return false;
     thresholds.add(threshold);
+    return true;
   }
 }
 
@@ -140,6 +143,12 @@ void main() {
       );
       expect((await repository.listTransactions()).single.id, id);
       expect(await repository.listTemplates(), isEmpty);
+      final unavailable = await repository.listTemplates(
+        includeUnavailable: true,
+      );
+      expect(unavailable.single.name, '커피');
+      await repository.removeTemplate(unavailable.single.id);
+      expect(await repository.listTemplates(includeUnavailable: true), isEmpty);
       await repository.savePaymentMethod(name: '임시');
       final unused = (await repository.listPaymentMethods()).last;
       await repository.removePaymentMethod(unused.id);
@@ -164,6 +173,86 @@ void main() {
     await repository.addTransaction(draft(1000));
     expect(alerts.thresholds, [50, 80, 50]);
   });
+
+  test(
+    'alert preference defaults to on and persists across store instances',
+    () async {
+      expect(await SettingsStore().getBudgetAlertsEnabled(), isTrue);
+      await SettingsStore().setBudgetAlertsEnabled(false);
+      expect(await SettingsStore().getBudgetAlertsEnabled(), isFalse);
+    },
+  );
+
+  test(
+    'alerts are suppressed while off without consuming thresholds',
+    () async {
+      final settings = SettingsStore();
+      await repository.setBudget(categoryId: 1, amount: 10000, anchor: month);
+      await settings.setBudgetAlertsEnabled(false);
+      await repository.addTransaction(draft(8000));
+      final db = await database.database;
+      expect(alerts.thresholds, isEmpty);
+      expect(await db.query('alert_history'), isEmpty);
+      await settings.setBudgetAlertsEnabled(true);
+      expect(alerts.thresholds, isEmpty);
+      await repository.addTransaction(draft(1));
+      await repository.addTransaction(draft(1));
+      expect(alerts.thresholds, [50, 80]);
+    },
+  );
+
+  test(
+    'category alerts start on and disabling them leaves thresholds eligible',
+    () async {
+      await repository.addCategory(name: '문화생활', colorHex: '#84B6E2');
+      expect(
+        (await repository.listCategories()).map((item) => item.alertsEnabled),
+        everyElement(isTrue),
+      );
+      await repository.setBudget(categoryId: 1, amount: 10000, anchor: month);
+      await repository.setCategoryAlertsEnabled(false, categoryId: 1);
+      await repository.addTransaction(draft(10000));
+      final db = await database.database;
+      expect(alerts.thresholds, isEmpty);
+      expect(await db.query('alert_history'), isEmpty);
+
+      await repository.setCategoryAlertsEnabled(true, categoryId: 1);
+      expect(alerts.thresholds, isEmpty);
+      expect(await db.query('alert_history'), isEmpty);
+      await repository.addTransaction(draft(1));
+      await repository.addTransaction(draft(1));
+      expect(alerts.thresholds, [50, 80, 100]);
+      expect(await db.query('alert_history'), hasLength(3));
+    },
+  );
+
+  test(
+    'alert preference round trips and older backups default to on',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('alert_backup');
+      addTearDown(() => directory.delete(recursive: true));
+      final service = BackupService(database, exportDirectory: directory);
+      final settings = SettingsStore();
+      await settings.setBudgetAlertsEnabled(false);
+      await repository.setCategoryAlertsEnabled(false, categoryId: 1);
+      final file = await service.createJsonBackup();
+      final bytes = await file.readAsBytes();
+      await settings.setBudgetAlertsEnabled(true);
+      await repository.setCategoryAlertsEnabled(true, categoryId: 1);
+      await service.restoreJson(bytes);
+      expect(await settings.getBudgetAlertsEnabled(), isFalse);
+      expect((await repository.listCategories()).first.alertsEnabled, isFalse);
+      expect((await repository.listCategories())[1].alertsEnabled, isTrue);
+      final legacy = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      legacy.remove('budgetAlertsEnabled');
+      for (final category in legacy['categories'] as List) {
+        (category as Map).remove('alerts_enabled');
+      }
+      await service.restoreJson(utf8.encode(jsonEncode(legacy)));
+      expect(await settings.getBudgetAlertsEnabled(), isTrue);
+      expect((await repository.listCategories()).first.alertsEnabled, isTrue);
+    },
+  );
 
   test('expired soft-deleted originals detach surviving refunds', () async {
     final id = await repository.addTransaction(draft(5000));
@@ -315,6 +404,51 @@ void main() {
       );
       await repository.setBudget(categoryId: 1, amount: budget, anchor: month);
       expect(alerts.thresholds, [50, 50]);
+    },
+  );
+
+  test(
+    'denied notifications leave their threshold eligible for delivery',
+    () async {
+      await repository.setBudget(categoryId: 1, amount: 100, anchor: month);
+      alerts.allowed = false;
+      final id = await repository.addTransaction(draft(50));
+      expect(await (await database.database).query('alert_history'), isEmpty);
+      expect(alerts.thresholds, isEmpty);
+
+      alerts.allowed = true;
+      await repository.updateTransaction(id, draft(50));
+      expect(alerts.thresholds, [50]);
+    },
+  );
+
+  test(
+    'the final active category and payment method cannot be removed',
+    () async {
+      final categories = await repository.listCategories();
+      for (final category in categories.skip(1)) {
+        await repository.removeCategory(category.id);
+      }
+      final methods = await repository.listPaymentMethods();
+      for (final method in methods.skip(1)) {
+        await repository.removePaymentMethod(method.id);
+      }
+      await expectLater(
+        repository.removeCategory(categories.first.id),
+        throwsStateError,
+      );
+      await expectLater(
+        repository.removePaymentMethod(methods.first.id),
+        throwsStateError,
+      );
+      expect(
+        (await repository.listCategories()).single.id,
+        categories.first.id,
+      );
+      expect(
+        (await repository.listPaymentMethods()).single.id,
+        methods.first.id,
+      );
     },
   );
 

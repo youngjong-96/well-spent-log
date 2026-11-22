@@ -401,7 +401,17 @@ class _MonthCalendar extends StatelessWidget {
                               height: 5,
                               margin: const EdgeInsets.symmetric(horizontal: 1),
                               decoration: BoxDecoration(
-                                color: colorFromHex(color),
+                                color: visibleForeground(
+                                  colorFromHex(color),
+                                  selected
+                                      ? Theme.of(
+                                          context,
+                                        ).colorScheme.primaryContainer
+                                      : Theme.of(
+                                          context,
+                                        ).scaffoldBackgroundColor,
+                                  Theme.of(context).colorScheme.primary,
+                                ),
                                 shape: BoxShape.circle,
                               ),
                             ),

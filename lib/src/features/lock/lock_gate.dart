@@ -37,9 +37,21 @@ class _LockGateState extends ConsumerState<LockGate> {
     return FutureBuilder<bool>(
       future: _hasPinFuture,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState != ConnectionState.done) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () => setState(() {
+                  _hasPinFuture = ref.read(lockServiceProvider).hasPin();
+                }),
+                child: const Text('PIN 확인 다시 시도'),
+              ),
+            ),
           );
         }
         if (!snapshot.data! || _unlocked) {
@@ -114,23 +126,30 @@ class _LockGateState extends ConsumerState<LockGate> {
   }
 
   Future<void> _unlock() async {
-    if (_pinController.text.isEmpty) {
+    if (_checking || _pinController.text.isEmpty) {
       return;
     }
     setState(() {
       _checking = true;
       _errorText = null;
     });
-    final valid = await ref
-        .read(lockServiceProvider)
-        .verifyPin(_pinController.text);
-    if (!mounted) {
-      return;
+    try {
+      final valid = await ref
+          .read(lockServiceProvider)
+          .verifyPin(_pinController.text);
+      if (!mounted) return;
+      _pinController.clear();
+      setState(() {
+        _checking = false;
+        _unlocked = valid;
+        _errorText = valid ? null : 'PIN이 맞지 않습니다.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _errorText = 'PIN을 확인하지 못했어요. 다시 시도해 주세요.';
+      });
     }
-    setState(() {
-      _checking = false;
-      _unlocked = valid;
-      _errorText = valid ? null : 'PIN이 맞지 않습니다.';
-    });
   }
 }

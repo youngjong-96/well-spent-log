@@ -1,19 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme/app_theme.dart';
 import '../../application/providers.dart';
+import '../../data/repositories/finance_repository.dart';
 import '../../domain/models/category.dart';
+import '../../domain/models/category_colors.dart';
 import '../../domain/models/home_summary.dart';
+import '../../domain/models/managed_name.dart';
 import '../../shared/formatters.dart';
+import '../../shared/widgets/budget_progress_tile.dart';
+
+import 'hidden_item_widgets.dart';
+
+const _duplicateNameMessage = '이미 있는 카테고리 이름이에요';
 
 class CategoryBudgetScreen extends ConsumerWidget {
   const CategoryBudgetScreen({super.key});
 
-  static const _swatches = ['#D8E8F5', '#84B6E2', '#294761'];
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categories = ref.watch(categoriesProvider);
+    final hiddenCategories = ref.watch(hiddenCategoriesProvider);
     final summary = ref.watch(homeSummaryProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('카테고리와 예산')),
@@ -46,7 +54,7 @@ class CategoryBudgetScreen extends ConsumerWidget {
                       ),
                     ),
                     TextButton.icon(
-                      onPressed: () => _editCategory(context, ref),
+                      onPressed: () => _editCategory(context),
                       icon: const Icon(Icons.add),
                       label: const Text('카테고리'),
                     ),
@@ -68,8 +76,26 @@ class CategoryBudgetScreen extends ConsumerWidget {
                     category,
                     _budgetFor(home, category.id),
                   ),
-                  onEdit: () => _editCategory(context, ref, category),
+                  onEdit: () => _editCategory(context, category),
                   onDelete: () => _deleteCategory(context, ref, category),
+                ),
+              if (hiddenCategories.hasError)
+                _RetryBody(
+                  onRetry: () => ref.invalidate(hiddenCategoriesProvider),
+                ),
+              if (hiddenCategories.value case final hidden?)
+                HiddenItemsSection(
+                  title: '숨긴 카테고리',
+                  items: [
+                    for (final item in hidden)
+                      HiddenItemTile(
+                        leading: _CategoryColorDot(item.category.colorHex),
+                        name: item.category.name,
+                        transactionCount: item.transactionCount,
+                        onRestore: () =>
+                            _restoreCategory(context, ref, item.category.id),
+                      ),
+                  ],
                 ),
             ],
           ),
@@ -130,104 +156,28 @@ class CategoryBudgetScreen extends ConsumerWidget {
   }
 
   Future<void> _editCategory(
-    BuildContext context,
-    WidgetRef ref, [
+    BuildContext context, [
     SpendingCategory? category,
   ]) async {
-    var name = category?.name ?? '';
-    var colorHex = category?.colorHex ?? _swatches.first;
-    final result = await showDialog<(String, String)>(
+    await showDialog<void>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(category == null ? '카테고리 추가' : '카테고리 수정'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextFormField(
-                initialValue: name,
-                autofocus: true,
-                maxLength: 20,
-                onChanged: (value) => name = value,
-                decoration: const InputDecoration(labelText: '이름'),
-              ),
-              const SizedBox(height: 12),
-              const Text('색상'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final swatch in _swatches)
-                    Semantics(
-                      label: '카테고리 색상 $swatch',
-                      selected: colorHex == swatch,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: () {
-                          setDialogState(() => colorHex = swatch);
-                        },
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: colorFromHex(swatch),
-                            shape: BoxShape.circle,
-                            border: colorHex == swatch
-                                ? Border.all(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                    width: 3,
-                                  )
-                                : null,
-                          ),
-                          child: colorHex == swatch
-                              ? Icon(
-                                  Icons.check,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                )
-                              : null,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final trimmedName = name.trim();
-                if (trimmedName.isNotEmpty) {
-                  Navigator.pop(context, (trimmedName, colorHex));
-                }
-              },
-              child: const Text('저장'),
-            ),
-          ],
-        ),
-      ),
+      builder: (context) => _CategoryDialog(category: category),
     );
-    if (result == null) {
-      return;
-    }
-    final repository = ref.read(financeRepositoryProvider);
-    if (category == null) {
-      await repository.addCategory(name: result.$1, colorHex: result.$2);
-    } else {
-      await repository.updateCategory(
-        id: category.id,
-        name: result.$1,
-        colorHex: result.$2,
-      );
+  }
+
+  Future<void> _restoreCategory(
+    BuildContext context,
+    WidgetRef ref,
+    int id,
+  ) async {
+    try {
+      await ref.read(financeRepositoryProvider).setCategoryActive(id, true);
+    } on DuplicateActiveCategoryName {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text(_duplicateNameMessage)));
+      }
     }
   }
 
@@ -253,9 +203,229 @@ class CategoryBudgetScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed == true) {
+    if (confirmed != true || !context.mounted) return;
+    try {
       await ref.read(financeRepositoryProvider).removeCategory(category.id);
+    } on StateError catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
     }
+  }
+}
+
+class _CategoryDialog extends ConsumerStatefulWidget {
+  const _CategoryDialog({this.category});
+
+  final SpendingCategory? category;
+
+  @override
+  ConsumerState<_CategoryDialog> createState() => _CategoryDialogState();
+}
+
+class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
+  late String _name = widget.category?.name ?? '';
+  late final _initialHex =
+      widget.category?.colorHex ?? categoryColorPresets.first;
+  late final _hexController = TextEditingController(text: _initialHex);
+  late bool _alertsEnabled = widget.category?.alertsEnabled ?? true;
+  bool _hexEdited = false;
+  bool _saving = false;
+  String? _nameError;
+
+  Future<void> _save(String colorHex) async {
+    final name = _name.trim();
+    final alertsEnabled = _alertsEnabled;
+    final category = widget.category;
+    final repository = ref.read(financeRepositoryProvider);
+    final route = ModalRoute.of(context)!;
+    setState(() => _saving = true);
+    try {
+      if (category == null) {
+        final active = await repository.listCategories();
+        if (!mounted || !route.isCurrent) return;
+        if (active.any(
+          (item) =>
+              normalizeManagedName(item.name) == normalizeManagedName(name),
+        )) {
+          throw const DuplicateActiveCategoryName();
+        }
+        final hidden = await repository.findHiddenCategoryByName(name);
+        if (!mounted || !route.isCurrent) return;
+        if (hidden != null) {
+          final reuse = await showHiddenItemReuseDialog(
+            context,
+            message:
+                "예전에 쓰던 '${hidden.category.name}' 카테고리가 숨겨져 있어요. "
+                '(기존 내역 ${hidden.transactionCount}건과 예산이 함께 돌아와요)',
+          );
+          if (!mounted || !route.isCurrent || reuse == null) return;
+          if (reuse) {
+            await repository.setCategoryActive(
+              hidden.category.id,
+              true,
+              colorHex: colorHex,
+              alertsEnabled: alertsEnabled,
+            );
+            if (mounted && route.isCurrent) Navigator.pop(context);
+            return;
+          }
+        }
+        await repository.addCategory(
+          name: name,
+          colorHex: colorHex,
+          alertsEnabled: alertsEnabled,
+        );
+      } else {
+        await repository.updateCategory(
+          id: category.id,
+          name: name,
+          colorHex: colorHex,
+          alertsEnabled: alertsEnabled,
+        );
+      }
+      if (mounted && route.isCurrent) Navigator.pop(context);
+    } on DuplicateActiveCategoryName {
+      if (mounted) setState(() => _nameError = _duplicateNameMessage);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _hexController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final masterEnabled = ref.watch(budgetAlertsEnabledProvider).value;
+    final normalizedHex = normalizeCategoryHex(_hexController.text);
+    final color = normalizedHex == null ? null : colorFromHex(normalizedHex);
+    final lowContrast =
+        _hexEdited &&
+        color != null &&
+        !categoryColorPresets.contains(normalizedHex) &&
+        (BudgetProgressBar.usesFallback(AppTheme.light, color) ||
+            BudgetProgressBar.usesFallback(AppTheme.dark, color));
+    return AlertDialog(
+      scrollable: true,
+      title: Text(widget.category == null ? '카테고리 추가' : '카테고리 수정'),
+      content: SizedBox(
+        width: 300,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              initialValue: _name,
+              maxLength: 20,
+              onChanged: (value) => setState(() {
+                _name = value;
+                _nameError = null;
+              }),
+              decoration: InputDecoration(
+                labelText: '이름',
+                errorText: _nameError,
+              ),
+            ),
+            const Text('색상'),
+            const SizedBox(height: 6),
+            Wrap(
+              children: [
+                for (final hex in categoryColorPresets)
+                  Semantics(
+                    selected: normalizedHex == hex,
+                    child: IconButton(
+                      tooltip: '카테고리 색상 $hex',
+                      onPressed: () => setState(() {
+                        _hexController.text = hex;
+                        _hexEdited = false;
+                      }),
+                      icon: CircleAvatar(
+                        radius: 15,
+                        backgroundColor: colorFromHex(hex),
+                        foregroundColor: Colors.white,
+                        child: normalizedHex == hex
+                            ? const Icon(Icons.check, size: 18)
+                            : null,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _hexController,
+              autocorrect: false,
+              enableSuggestions: false,
+              textCapitalization: TextCapitalization.characters,
+              onChanged: (_) => setState(() => _hexEdited = true),
+              decoration: InputDecoration(
+                isDense: true,
+                labelText: 'HEX 색상',
+                hintText: '#RRGGBB',
+                errorText: normalizedHex == null ? '색상 코드 6자리를 입력해 주세요.' : null,
+                suffixIcon: Center(
+                  widthFactor: 1,
+                  heightFactor: 1,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color,
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (lowContrast)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '배경과 비슷해서 막대가 잘 안 보일 수 있어요. 이 경우 기본 색으로 보여요.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('예산 알림 받기'),
+              subtitle: masterEnabled == false
+                  ? const Text('전체 예산 알림이 꺼져 있어요')
+                  : null,
+              value: _alertsEnabled,
+              onChanged: masterEnabled == true
+                  ? (value) => setState(() => _alertsEnabled = value)
+                  : null,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('취소'),
+        ),
+        FilledButton(
+          onPressed: _saving || normalizedHex == null || _name.trim().isEmpty
+              ? null
+              : () => _save(
+                  _hexController.text == _initialHex
+                      ? _initialHex
+                      : normalizedHex,
+                ),
+          child: const Text('저장'),
+        ),
+      ],
+    );
   }
 }
 
@@ -278,14 +448,7 @@ class _CategoryBudgetTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       minTileHeight: 68,
-      leading: Container(
-        width: 18,
-        height: 18,
-        decoration: BoxDecoration(
-          color: colorFromHex(category.colorHex),
-          shape: BoxShape.circle,
-        ),
-      ),
+      leading: _CategoryColorDot(category.colorHex),
       title: Text(category.name),
       subtitle: Text(budgetAmount == 0 ? '예산 미설정' : formatWon(budgetAmount)),
       onTap: onBudgetTap,
@@ -296,6 +459,28 @@ class _CategoryBudgetTile extends StatelessWidget {
           PopupMenuItem(value: 'edit', child: Text('수정')),
           PopupMenuItem(value: 'delete', child: Text('삭제')),
         ],
+      ),
+    );
+  }
+}
+
+class _CategoryColorDot extends StatelessWidget {
+  const _CategoryColorDot(this.colorHex);
+
+  final String colorHex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: visibleForeground(
+          colorFromHex(colorHex),
+          Theme.of(context).scaffoldBackgroundColor,
+          Theme.of(context).colorScheme.primary,
+        ),
+        shape: BoxShape.circle,
       ),
     );
   }

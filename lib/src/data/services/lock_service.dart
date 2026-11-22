@@ -26,22 +26,27 @@ class LockService {
     final salt = base64UrlEncode(
       List<int>.generate(24, (_) => random.nextInt(256)),
     );
-    await _storage.write(key: _saltKey, value: salt);
-    await _storage.write(key: _hashKey, value: _hash(pin, salt));
+    // Write the salt and hash together so changing the PIN is a single write.
+    await _storage.write(key: _hashKey, value: '$salt:${_hash(pin, salt)}');
   }
 
   Future<bool> verifyPin(String pin) async {
-    final salt = await _storage.read(key: _saltKey);
-    final savedHash = await _storage.read(key: _hashKey);
-    if (salt == null || savedHash == null) {
-      return true;
+    final credential = await _storage.read(key: _hashKey);
+    if (credential == null) return false;
+
+    final separator = credential.indexOf(':');
+    if (separator >= 0) {
+      final salt = credential.substring(0, separator);
+      final hash = credential.substring(separator + 1);
+      return _constantTimeEquals(hash, _hash(pin, salt));
     }
-    return _constantTimeEquals(savedHash, _hash(pin, salt));
+    final salt = await _storage.read(key: _saltKey);
+    return salt != null && _constantTimeEquals(credential, _hash(pin, salt));
   }
 
   Future<void> removePin() async {
-    await _storage.delete(key: _saltKey);
     await _storage.delete(key: _hashKey);
+    await _storage.delete(key: _saltKey);
   }
 
   String _hash(String pin, String salt) {

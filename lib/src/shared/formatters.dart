@@ -68,14 +68,33 @@ String formatMonth(DateTime date) {
   return DateFormat('yyyy년 M월', 'ko_KR').format(date);
 }
 
+Color visibleForeground(Color color, Color background, Color fallback) {
+  final foregroundLuminance = color.computeLuminance();
+  final backgroundLuminance = background.computeLuminance();
+  final lighter = foregroundLuminance > backgroundLuminance
+      ? foregroundLuminance
+      : backgroundLuminance;
+  final darker = foregroundLuminance < backgroundLuminance
+      ? foregroundLuminance
+      : backgroundLuminance;
+  // Preserve category colors when they meet 3:1 contrast for graphics.
+  return (lighter + 0.05) / (darker + 0.05) >= 3 ? color : fallback;
+}
+
 Color colorFromHex(String hex) {
-  final normalized = hex.replaceFirst('#', '');
-  final value = int.tryParse(normalized, radix: 16) ?? 0;
+  final normalized = normalizeCategoryHex(hex);
+  if (normalized == null) return AppColors.primary;
+  final value = int.parse(normalized.substring(1), radix: 16);
   const currentPalette = {
     0xD8E8F5: AppColors.softBlue,
     0x84B6E2: AppColors.skyBlue,
     0x294761: AppColors.navyBlue,
   };
-  return currentPalette[value] ??
-      AppColors.categoryPalette[value % AppColors.categoryPalette.length];
+  return currentPalette[value] ?? Color(0xFF000000 | value);
+}
+
+String? normalizeCategoryHex(String input) {
+  final hex = input.trim();
+  if (!RegExp(r'^#?[0-9a-fA-F]{6}$').hasMatch(hex)) return null;
+  return '#${hex.replaceFirst('#', '').toUpperCase()}';
 }

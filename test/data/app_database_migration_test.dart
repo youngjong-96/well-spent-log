@@ -11,6 +11,54 @@ void main() {
   sqfliteFfiInit();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test('version 3 adds enabled alerts and preserves existing data', () async {
+    final temporary = await Directory.systemTemp.createTemp(
+      'alerts_migration_',
+    );
+    addTearDown(() => temporary.delete(recursive: true));
+    final path = '${temporary.path}/spending.db';
+    final original = AppDatabase(
+      factory: databaseFactoryFfi,
+      databasePath: path,
+    );
+    addTearDown(original.close);
+    final previous = await original.database;
+    await previous.execute('ALTER TABLE categories DROP COLUMN alerts_enabled');
+    await previous.setVersion(3);
+    await previous.update('categories', {'is_active': 0}, where: 'id = 2');
+    await previous.insert('budget_periods', {
+      'id': 1,
+      'start_date': '2026-01-01',
+      'end_date': '2026-01-31',
+      'month_start_day': 1,
+      'created_at': '2026-01-01',
+    });
+    await previous.insert('monthly_budgets', {
+      'period_id': 1,
+      'category_id': 1,
+      'amount': 12000,
+      'created_at': '2026-01-01',
+      'updated_at': '2026-01-01',
+    });
+    final categories = await previous.query('categories', orderBy: 'id');
+    final budgets = await previous.query('monthly_budgets');
+    await original.close();
+
+    final upgraded = AppDatabase(
+      factory: databaseFactoryFfi,
+      databasePath: path,
+    );
+    addTearDown(upgraded.close);
+    final db = await upgraded.database;
+    expect(await db.getVersion(), 4);
+    expect(await db.query('categories', orderBy: 'id'), [
+      for (final category in categories) {...category, 'alerts_enabled': 1},
+    ]);
+    expect(await db.query('monthly_budgets'), budgets);
+    expect(await db.rawQuery('PRAGMA foreign_key_check'), isEmpty);
+    expect(await BackupService(upgraded).findMigrationBackup(), isNull);
+  });
+
   for (final oldVersion in [1, 2]) {
     test(
       'version $oldVersion migrates spending and preserves the complete original backup',
@@ -124,7 +172,8 @@ void main() {
               : ['#84B6E2', '#294761', '#D8E8F5', '#84B6E2'],
         );
         final db = await appDatabase.database;
-        expect(await db.getVersion(), 3);
+        expect(await db.getVersion(), 4);
+        expect(rows.map((row) => row['alerts_enabled']), everyElement(1));
         expect((await db.query('transactions')).map((row) => row['id']), [
           1,
           3,

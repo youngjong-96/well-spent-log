@@ -8,6 +8,7 @@ import '../../domain/models/budget_usage.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/expense_template.dart';
 import '../../domain/models/home_summary.dart';
+import '../../domain/models/managed_name.dart';
 import '../../domain/models/money.dart';
 import '../../domain/models/monthly_budget.dart';
 import '../../domain/models/payment_method.dart';
@@ -18,6 +19,14 @@ import '../../domain/usecases/calculate_budget_period.dart';
 import '../local/app_database.dart';
 import '../services/notification_service.dart';
 import '../settings/settings_store.dart';
+
+class DuplicateActiveCategoryName implements Exception {
+  const DuplicateActiveCategoryName();
+}
+
+class DuplicateActivePaymentMethodName implements Exception {
+  const DuplicateActivePaymentMethodName();
+}
 
 class FinanceRepository {
   FinanceRepository({
@@ -92,6 +101,33 @@ class FinanceRepository {
     return rows.map(SpendingCategory.fromMap).toList();
   }
 
+  Future<List<HiddenCategory>> listHiddenCategories() async {
+    final db = await _database.database;
+    final rows = await db.rawQuery('''
+      SELECT c.*, (
+        SELECT COUNT(*) FROM transactions t
+        WHERE t.category_id = c.id AND t.deleted_at IS NULL
+      ) AS transaction_count
+      FROM categories c
+      WHERE c.is_active = 0
+      ORDER BY c.updated_at DESC, c.id DESC
+      ''');
+    return [
+      for (final row in rows)
+        HiddenCategory(
+          SpendingCategory.fromMap(row),
+          _asInt(row['transaction_count']),
+        ),
+    ];
+  }
+
+  Future<HiddenCategory?> findHiddenCategoryByName(String name) async {
+    final normalized = normalizeManagedName(name);
+    return (await listHiddenCategories())
+        .where((item) => normalizeManagedName(item.category.name) == normalized)
+        .firstOrNull;
+  }
+
   Future<List<PaymentMethod>> listPaymentMethods({
     bool includeInactive = false,
   }) async {
@@ -104,18 +140,51 @@ class FinanceRepository {
     return rows.map(PaymentMethod.fromMap).toList();
   }
 
-  Future<List<ExpenseTemplate>> listTemplates() async {
+  Future<List<HiddenPaymentMethod>> listHiddenPaymentMethods() async {
     final db = await _database.database;
     final rows = await db.rawQuery('''
+      SELECT pm.*, (
+        SELECT COUNT(*) FROM transactions t
+        WHERE t.payment_method_id = pm.id AND t.deleted_at IS NULL
+      ) AS transaction_count
+      FROM payment_methods pm
+      WHERE pm.is_active = 0
+      ORDER BY pm.updated_at DESC, pm.id DESC
+      ''');
+    return [
+      for (final row in rows)
+        HiddenPaymentMethod(
+          PaymentMethod.fromMap(row),
+          _asInt(row['transaction_count']),
+        ),
+    ];
+  }
+
+  Future<HiddenPaymentMethod?> findHiddenPaymentMethodByName(
+    String name,
+  ) async {
+    final normalized = normalizeManagedName(name);
+    return (await listHiddenPaymentMethods())
+        .where((item) => normalizeManagedName(item.method.name) == normalized)
+        .firstOrNull;
+  }
+
+  Future<List<ExpenseTemplate>> listTemplates({
+    bool includeUnavailable = false,
+  }) async {
+    final db = await _database.database;
+    final rows = await db.rawQuery(
+      '''
       SELECT et.*
       FROM expense_templates et
       JOIN categories c ON c.id = et.category_id
       JOIN payment_methods pm ON pm.id = et.payment_method_id
       WHERE et.is_active = 1
-        AND c.is_active = 1
-        AND pm.is_active = 1
+        AND (? = 1 OR (c.is_active = 1 AND pm.is_active = 1))
       ORDER BY et.updated_at DESC
-    ''');
+    ''',
+      [includeUnavailable ? 1 : 0],
+    );
     return rows.map(ExpenseTemplate.fromMap).toList();
   }
 
@@ -379,22 +448,66 @@ class FinanceRepository {
     _notifyChanged();
   }
 
+  Future<void> _checkActiveCategoryName(
+    DatabaseExecutor db,
+    String name, {
+    int? excludingId,
+  }) async {
+    if (await _hasActiveName(db, 'categories', name, excludingId)) {
+      throw const DuplicateActiveCategoryName();
+    }
+  }
+
+  Future<void> _checkActivePaymentMethodName(
+    DatabaseExecutor db,
+    String name, {
+    int? excludingId,
+  }) async {
+    if (await _hasActiveName(db, 'payment_methods', name, excludingId)) {
+      throw const DuplicateActivePaymentMethodName();
+    }
+  }
+
+  Future<bool> _hasActiveName(
+    DatabaseExecutor db,
+    String table,
+    String name,
+    int? excludingId,
+  ) async {
+    final normalized = normalizeManagedName(name);
+    final rows = await db.query(
+      table,
+      columns: ['id', 'name'],
+      where: 'is_active = 1',
+    );
+    return rows.any(
+      (row) =>
+          row['id'] != excludingId &&
+          normalizeManagedName(row['name'] as String) == normalized,
+    );
+  }
+
   Future<void> addCategory({
     required String name,
     required String colorHex,
+    bool alertsEnabled = true,
   }) async {
     final db = await _database.database;
-    final now = DateTime.now().toIso8601String();
-    final orderRows = await db.rawQuery(
-      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM categories',
-    );
-    await db.insert('categories', {
-      'name': name.trim(),
-      'color_hex': colorHex,
-      'sort_order': _asInt(orderRows.first['next_order']),
-      'is_active': 1,
-      'created_at': now,
-      'updated_at': now,
+    await db.transaction((txn) async {
+      await _checkActiveCategoryName(txn, name);
+      final now = DateTime.now().toIso8601String();
+      final orderRows = await txn.rawQuery(
+        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM categories',
+      );
+      await txn.insert('categories', {
+        'name': name.trim(),
+        'color_hex': colorHex,
+        'sort_order': _asInt(orderRows.first['next_order']),
+        'is_active': 1,
+        'alerts_enabled': alertsEnabled ? 1 : 0,
+        'created_at': now,
+        'updated_at': now,
+      });
     });
     _notifyChanged();
   }
@@ -403,25 +516,62 @@ class FinanceRepository {
     required int id,
     required String name,
     required String colorHex,
+    bool? alertsEnabled,
   }) async {
+    final db = await _database.database;
+    await db.transaction((txn) async {
+      await _checkActiveCategoryName(txn, name, excludingId: id);
+      await txn.update(
+        'categories',
+        {
+          'name': name.trim(),
+          'color_hex': colorHex,
+          if (alertsEnabled != null) 'alerts_enabled': alertsEnabled ? 1 : 0,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
+    _notifyChanged();
+  }
+
+  Future<void> setCategoryAlertsEnabled(bool enabled, {int? categoryId}) async {
     final db = await _database.database;
     await db.update(
       'categories',
       {
-        'name': name.trim(),
-        'color_hex': colorHex,
+        'alerts_enabled': enabled ? 1 : 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
-      where: 'id = ?',
-      whereArgs: [id],
+      where: categoryId == null ? 'is_active = 1' : 'is_active = 1 AND id = ?',
+      whereArgs: categoryId == null ? null : [categoryId],
     );
     _notifyChanged();
   }
 
-  Future<void> setCategoryActive(int id, bool active) async {
+  Future<void> setCategoryActive(
+    int id,
+    bool active, {
+    String? colorHex,
+    bool? alertsEnabled,
+  }) async {
     final db = await _database.database;
     await db.transaction((txn) async {
-      if (!active) {
+      if (active) {
+        final rows = await txn.query(
+          'categories',
+          columns: ['name'],
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (rows.isEmpty) return;
+        await _checkActiveCategoryName(
+          txn,
+          rows.single['name'] as String,
+          excludingId: id,
+        );
+      } else {
         final others = await txn.query(
           'categories',
           where: 'is_active = 1 AND id != ?',
@@ -434,6 +584,8 @@ class FinanceRepository {
         'categories',
         {
           'is_active': active ? 1 : 0,
+          'color_hex': ?colorHex,
+          if (alertsEnabled != null) 'alerts_enabled': alertsEnabled ? 1 : 0,
           'updated_at': DateTime.now().toIso8601String(),
         },
         where: 'id = ?',
@@ -445,39 +597,66 @@ class FinanceRepository {
 
   Future<void> setPaymentMethodActive(int id, bool active) async {
     final db = await _database.database;
-    await db.update(
-      'payment_methods',
-      {
-        'is_active': active ? 1 : 0,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.transaction((txn) async {
+      if (active) {
+        final rows = await txn.query(
+          'payment_methods',
+          columns: ['name'],
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (rows.isEmpty) return;
+        await _checkActivePaymentMethodName(
+          txn,
+          rows.single['name'] as String,
+          excludingId: id,
+        );
+      }
+      await txn.update(
+        'payment_methods',
+        {
+          'is_active': active ? 1 : 0,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
     _notifyChanged();
   }
 
   Future<void> removeCategory(int id) async {
     final db = await _database.database;
-    final references = await db.rawQuery(
-      '''
-      SELECT
-        (SELECT COUNT(*) FROM transactions WHERE category_id = ?) +
-        (SELECT COUNT(*) FROM monthly_budgets WHERE category_id = ?) +
-        (SELECT COUNT(*) FROM expense_templates WHERE category_id = ?) AS count
-      ''',
-      [id, id, id],
-    );
-    if (_asInt(references.first['count']) > 0) {
-      await db.update(
+    await db.transaction((txn) async {
+      final active = await txn.query(
         'categories',
-        {'is_active': 0, 'updated_at': DateTime.now().toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [id],
+        columns: ['id'],
+        where: 'is_active = 1',
+        limit: 2,
       );
-    } else {
-      await db.delete('categories', where: 'id = ?', whereArgs: [id]);
-    }
+      if (active.length == 1 && active.single['id'] == id) {
+        throw StateError('최소 1개 카테고리를 유지해 주세요.');
+      }
+      final references = await txn.rawQuery(
+        '''
+        SELECT
+          (SELECT COUNT(*) FROM transactions WHERE category_id = ?) +
+          (SELECT COUNT(*) FROM monthly_budgets WHERE category_id = ?) +
+          (SELECT COUNT(*) FROM expense_templates WHERE category_id = ?) AS count
+        ''',
+        [id, id, id],
+      );
+      if (_asInt(references.first['count']) > 0) {
+        await txn.update(
+          'categories',
+          {'is_active': 0, 'updated_at': DateTime.now().toIso8601String()},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      } else {
+        await txn.delete('categories', where: 'id = ?', whereArgs: [id]);
+      }
+    });
     _notifyChanged();
   }
 
@@ -487,46 +666,60 @@ class FinanceRepository {
       throw ArgumentError('Invalid payment method name.');
     }
     final db = await _database.database;
-    final now = DateTime.now().toIso8601String();
-    if (id == null) {
-      await db.insert('payment_methods', {
-        'name': trimmed,
-        'is_active': 1,
-        'created_at': now,
-        'updated_at': now,
-      });
-    } else {
-      await db.update(
-        'payment_methods',
-        {'name': trimmed, 'updated_at': now},
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-    }
+    await db.transaction((txn) async {
+      await _checkActivePaymentMethodName(txn, trimmed, excludingId: id);
+      final now = DateTime.now().toIso8601String();
+      if (id == null) {
+        await txn.insert('payment_methods', {
+          'name': trimmed,
+          'is_active': 1,
+          'created_at': now,
+          'updated_at': now,
+        });
+      } else {
+        await txn.update(
+          'payment_methods',
+          {'name': trimmed, 'updated_at': now},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+    });
     _notifyChanged();
   }
 
   Future<void> removePaymentMethod(int id) async {
     final db = await _database.database;
-    final references = await db.rawQuery(
-      '''
-      SELECT
-        (SELECT COUNT(*) FROM transactions WHERE payment_method_id = ?) +
-        (SELECT COUNT(*) FROM expense_templates WHERE payment_method_id = ?)
-        AS count
-      ''',
-      [id, id],
-    );
-    if (_asInt(references.first['count']) > 0) {
-      await db.update(
+    await db.transaction((txn) async {
+      final active = await txn.query(
         'payment_methods',
-        {'is_active': 0, 'updated_at': DateTime.now().toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [id],
+        columns: ['id'],
+        where: 'is_active = 1',
+        limit: 2,
       );
-    } else {
-      await db.delete('payment_methods', where: 'id = ?', whereArgs: [id]);
-    }
+      if (active.length == 1 && active.single['id'] == id) {
+        throw StateError('최소 1개의 결제수단을 유지해 주세요.');
+      }
+      final references = await txn.rawQuery(
+        '''
+        SELECT
+          (SELECT COUNT(*) FROM transactions WHERE payment_method_id = ?) +
+          (SELECT COUNT(*) FROM expense_templates WHERE payment_method_id = ?)
+          AS count
+        ''',
+        [id, id],
+      );
+      if (_asInt(references.first['count']) > 0) {
+        await txn.update(
+          'payment_methods',
+          {'is_active': 0, 'updated_at': DateTime.now().toIso8601String()},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      } else {
+        await txn.delete('payment_methods', where: 'id = ?', whereArgs: [id]);
+      }
+    });
     _notifyChanged();
   }
 
@@ -805,7 +998,7 @@ class FinanceRepository {
       final alerts = <(int, String, int)>[];
       final rows = await txn.rawQuery(
         '''
-      SELECT c.name, COALESCE(mb.amount, 0) AS budget,
+      SELECT c.name, c.alerts_enabled, COALESCE(mb.amount, 0) AS budget,
         COALESCE(SUM(CASE
           WHEN t.type = 'expense' THEN t.amount
           WHEN t.type = 'refund' THEN -t.amount
@@ -819,7 +1012,7 @@ class FinanceRepository {
         AND t.occurred_at >= ?
         AND t.occurred_at < ?
       WHERE c.id = ?
-      GROUP BY c.id, c.name, mb.amount
+      GROUP BY c.id, c.name, c.alerts_enabled, mb.amount
       ''',
         [
           period.id,
@@ -834,6 +1027,7 @@ class FinanceRepository {
       final spentPercent =
           BigInt.from(_asInt(rows.first['spent'])) * BigInt.from(100);
       final categoryName = rows.first['name']! as String;
+      final alertsEnabled = rows.first['alerts_enabled'] == 1;
       for (final threshold in const [50, 80, 100]) {
         const where = 'period_id = ? AND category_id = ? AND threshold = ?';
         final keys = [period.id, categoryId, threshold];
@@ -842,6 +1036,7 @@ class FinanceRepository {
           await txn.delete('alert_history', where: where, whereArgs: keys);
           continue;
         }
+        if (!alertsEnabled) continue;
 
         final existing = await txn.query(
           'alert_history',
@@ -864,11 +1059,21 @@ class FinanceRepository {
 
     for (final (alertId, categoryName, threshold) in pending) {
       try {
-        await _notificationService.showBudgetAlert(
-          id: alertId,
-          categoryName: categoryName,
-          threshold: threshold,
-        );
+        // Re-enabling only affects subsequent budget evaluations.
+        final shown =
+            await _settingsStore.getBudgetAlertsEnabled() &&
+            await _notificationService.showBudgetAlert(
+              id: alertId,
+              categoryName: categoryName,
+              threshold: threshold,
+            );
+        if (!shown) {
+          await db.delete(
+            'alert_history',
+            where: 'id = ?',
+            whereArgs: [alertId],
+          );
+        }
       } catch (error, stackTrace) {
         await db.delete('alert_history', where: 'id = ?', whereArgs: [alertId]);
         log(

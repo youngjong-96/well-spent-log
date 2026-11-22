@@ -180,12 +180,21 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
 
   Future<_FormOptions> _loadOptions() async {
     final repository = ref.read(financeRepositoryProvider);
-    final categories = await repository.listCategories(
-      includeInactive: widget.record != null,
-    );
-    final methods = await repository.listPaymentMethods(
-      includeInactive: widget.record != null,
-    );
+    final record = widget.record;
+    final categories =
+        (await repository.listCategories(includeInactive: record != null))
+            .where(
+              (category) =>
+                  category.isActive || category.id == record?.categoryId,
+            )
+            .toList();
+    final methods =
+        (await repository.listPaymentMethods(includeInactive: record != null))
+            .where(
+              (method) =>
+                  method.isActive || method.id == record?.paymentMethodId,
+            )
+            .toList();
     final templates = await repository.listTemplates();
     final recentExpenseCandidates = await repository.listTransactions(
       limit: widget.record == null ? 6 : null,
@@ -195,10 +204,11 @@ class _TransactionFormSheetState extends ConsumerState<TransactionFormSheet>
     final paymentMethodIds = methods.map((item) => item.id).toSet();
     final recentExpenses = recentExpenseCandidates
         .where(
-          (record) =>
-              record.id != widget.record?.id &&
-              categoryIds.contains(record.categoryId) &&
-              paymentMethodIds.contains(record.paymentMethodId),
+          (candidate) =>
+              candidate.id != record?.id &&
+              (candidate.id == record?.refundedExpenseId ||
+                  (categoryIds.contains(candidate.categoryId) &&
+                      paymentMethodIds.contains(candidate.paymentMethodId))),
         )
         .toList();
 

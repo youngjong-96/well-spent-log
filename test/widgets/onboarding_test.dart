@@ -14,12 +14,32 @@ import 'package:well_spent_log/src/data/repositories/finance_repository.dart';
 import 'package:well_spent_log/src/data/services/backup_service.dart';
 import 'package:well_spent_log/src/data/services/notification_service.dart';
 import 'package:well_spent_log/src/data/settings/settings_store.dart';
+import 'package:well_spent_log/src/domain/models/category_colors.dart';
 import 'package:well_spent_log/src/domain/models/transaction_draft.dart';
 import 'package:well_spent_log/src/domain/models/transaction_record.dart';
 import 'package:well_spent_log/src/features/manage/manage_screen.dart';
+import 'package:well_spent_log/src/features/manage/category_budget_screen.dart';
 import 'package:well_spent_log/src/features/onboarding/onboarding_screen.dart';
 import 'package:well_spent_log/src/features/onboarding/first_record_tour.dart';
 import 'package:well_spent_log/src/features/transaction/transaction_form_sheet.dart';
+
+class _AlertPermissions extends NotificationService {
+  bool granted = true;
+  int requests = 0;
+  int settingsVisits = 0;
+
+  @override
+  bool get canOpenNotificationSettings => true;
+
+  @override
+  Future<bool> hasPermission() async => granted;
+
+  @override
+  Future<void> requestPermission() async => requests++;
+
+  @override
+  Future<void> openNotificationSettings() async => settingsVisits++;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -45,7 +65,11 @@ void main() {
     await database.close();
   });
 
-  Future<void> mount(WidgetTester tester, Widget child) async {
+  Future<void> mount(
+    WidgetTester tester,
+    Widget child, {
+    NotificationService? notificationService,
+  }) async {
     tester.view.physicalSize = const Size(384, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -55,10 +79,19 @@ void main() {
         overrides: [
           financeRepositoryProvider.overrideWithValue(repository),
           appDatabaseProvider.overrideWithValue(database),
+          if (notificationService != null)
+            notificationServiceProvider.overrideWithValue(notificationService),
         ],
         child: MaterialApp(theme: AppTheme.light, home: child),
       ),
     );
+    await settle(tester);
+  }
+
+  Future<void> tapLabel(WidgetTester tester, String label) async {
+    final target = find.text(label).last;
+    await tester.ensureVisible(target);
+    await tester.tap(target);
     await settle(tester);
   }
 
@@ -67,6 +100,295 @@ void main() {
     expect(find.text('쓰면 바로\n기록하자!'), findsOneWidget);
     expect(find.text('백업에서 복원하기'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
+  test('온보딩에 사용하는 기본 카테고리 색상이 서로 다르다', () async {
+    final categories = await repository.listCategories();
+    expect(categories, hasLength(8));
+    expect(
+      categories.map((category) => category.colorHex).toSet(),
+      hasLength(8),
+    );
+  });
+
+  testWidgets('예산 알림을 켜고 끄며 권한과 복귀 상태를 표시한다', (tester) async {
+    final permissions = _AlertPermissions();
+    await mount(
+      tester,
+      const Scaffold(body: ManageScreen()),
+      notificationService: permissions,
+    );
+    final tile = find.byType(SwitchListTile);
+    bool enabled() => tester.widget<SwitchListTile>(tile).value;
+    expect(enabled(), isTrue);
+    expect(find.text('설정 열기'), findsNothing);
+    expect(find.text('카테고리별 알림 · 8개 중 8개 켜짐'), findsOneWidget);
+
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(enabled(), isFalse);
+    expect(find.textContaining('카테고리별 알림'), findsNothing);
+    expect(await SettingsStore().getBudgetAlertsEnabled(), isFalse);
+
+    permissions.granted = false;
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(permissions.requests, 1);
+    expect(enabled(), isTrue);
+    expect(find.text('알림 권한이 꺼져 있어요'), findsOneWidget);
+    await tester.tap(find.text('설정 열기'));
+    expect(permissions.settingsVisits, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    permissions.granted = true;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(enabled(), isTrue);
+    expect(find.text('설정 열기'), findsNothing);
+  });
+
+  testWidgets('카테고리별 알림은 보이는 카테고리만 집계하고 변경을 반영한다', (tester) async {
+    await tester.runAsync(() => repository.setCategoryActive(8, false));
+    await mount(
+      tester,
+      const Scaffold(body: ManageScreen()),
+      notificationService: _AlertPermissions(),
+    );
+    final allOn = find.text('카테고리별 알림 · 7개 중 7개 켜짐');
+    await tapLabel(tester, '카테고리별 알림 · 7개 중 7개 켜짐');
+    final tiles = find.byType(SwitchListTile);
+    Iterable<bool> values() =>
+        tester.widgetList<SwitchListTile>(tiles).map((tile) => tile.value);
+    expect(tiles, findsNWidgets(7));
+    expect(find.text('기타'), findsNothing);
+    await tapLabel(tester, '식비');
+    expect(values().where((value) => value), hasLength(6));
+    await tester.pageBack();
+    await settle(tester);
+    expect(allOn, findsNothing);
+    await tapLabel(tester, '카테고리별 알림 · 7개 중 6개 켜짐');
+    await tapLabel(tester, '모두 켜기');
+    expect(values(), everyElement(isTrue));
+    await tapLabel(tester, '모두 끄기');
+    expect(values(), everyElement(isFalse));
+    await tester.pageBack();
+    await settle(tester);
+    expect(find.text('카테고리별 알림 · 7개 중 0개 켜짐'), findsOneWidget);
+    final categories = await tester.runAsync(
+      () => repository.listCategories(includeInactive: true),
+    );
+    expect(
+      categories!.singleWhere((item) => item.id == 8).alertsEnabled,
+      isTrue,
+    );
+  });
+
+  testWidgets('전체 예산 알림이 꺼지면 카테고리 스위치를 비활성화한다', (tester) async {
+    await SettingsStore().setBudgetAlertsEnabled(false);
+    await mount(tester, const CategoryBudgetScreen());
+    await tapLabel(tester, '카테고리');
+    final tile = tester.widget<SwitchListTile>(
+      find.widgetWithText(SwitchListTile, '예산 알림 받기'),
+    );
+    expect(tile.onChanged, isNull);
+    expect(tile.value, isTrue);
+    expect(find.text('전체 예산 알림이 꺼져 있어요'), findsOneWidget);
+  });
+
+  const legacyHex = 'abcdef';
+  final hexField = find.widgetWithText(TextField, 'HEX 색상');
+
+  String hexText(WidgetTester tester) =>
+      tester.widget<TextField>(hexField).controller!.text;
+
+  Future<int> openLegacyCategory(WidgetTester tester) async {
+    final id = await tester.runAsync(() async {
+      final category = (await repository.listCategories()).first;
+      await repository.updateCategory(
+        id: category.id,
+        name: category.name,
+        colorHex: legacyHex,
+      );
+      return category.id;
+    });
+    await mount(tester, const CategoryBudgetScreen());
+    await tester.tap(find.byTooltip('카테고리 메뉴').first);
+    await settle(tester);
+    await tapLabel(tester, '수정');
+    return id!;
+  }
+
+  testWidgets('기존 맞춤 색상을 HEX에 표시하고 그대로 저장한다', (tester) async {
+    final id = await openLegacyCategory(tester);
+    final swatches = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(CircleAvatar),
+    );
+    expect(swatches, findsNWidgets(categoryColorPresets.length));
+    expect(
+      tester
+          .widgetList<CircleAvatar>(swatches)
+          .every((swatch) => swatch.child == null),
+      isTrue,
+    );
+    expect(hexText(tester), legacyHex);
+
+    await tester.enterText(find.byType(TextFormField), '수정한 이름');
+    await tapLabel(tester, '저장');
+    final categories = await tester.runAsync(repository.listCategories);
+    final saved = categories!.singleWhere((category) => category.id == id);
+    expect(saved.name, '수정한 이름');
+    expect(saved.colorHex, legacyHex);
+  });
+
+  testWidgets('기존 색상 대신 고른 기본 색상을 저장한다', (tester) async {
+    final id = await openLegacyCategory(tester);
+    final preset = categoryColorPresets.last;
+    final swatch = find.byTooltip('카테고리 색상 $preset');
+    await tester.tap(swatch);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: swatch, matching: find.byIcon(Icons.check)),
+      findsOneWidget,
+    );
+    expect(hexText(tester), preset);
+
+    await tapLabel(tester, '예산 알림 받기');
+    await tapLabel(tester, '저장');
+    final categories = await tester.runAsync(repository.listCategories);
+    final saved = categories!.singleWhere((category) => category.id == id);
+    expect(saved.colorHex, preset);
+    expect(saved.alertsEnabled, isFalse);
+  });
+
+  testWidgets('기본 색상 14개와 HEX 입력을 표시하고 입력과 선택을 연동한다', (tester) async {
+    await mount(tester, const CategoryBudgetScreen());
+    await tapLabel(tester, '카테고리');
+    expect(find.byType(CircleAvatar), findsNWidgets(14));
+    expect(find.byType(Slider), findsNothing);
+    expect(find.widgetWithText(TextFormField, '이름'), findsOneWidget);
+    expect(find.text('직접 선택'), findsNothing);
+    expect(hexText(tester), categoryColorPresets.first);
+
+    final preset = categoryColorPresets.last;
+    await tester.enterText(hexField, preset.substring(1).toLowerCase());
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byTooltip('카테고리 색상 $preset'),
+        matching: find.byIcon(Icons.check),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('배경과 비슷해서'), findsNothing);
+  });
+
+  testWidgets('잘못된 HEX는 저장을 막고 대비가 낮은 유효한 HEX는 저장한다', (tester) async {
+    await mount(tester, const CategoryBudgetScreen());
+    await tapLabel(tester, '카테고리');
+    await tester.enterText(find.byType(TextFormField), '맞춤 색상');
+    await tester.enterText(hexField, '#00zz00');
+    await tester.pumpAndSettle();
+    expect(find.text('색상 코드 6자리를 입력해 주세요.'), findsOneWidget);
+    final save = find.widgetWithText(FilledButton, '저장');
+    expect(tester.widget<FilledButton>(save).onPressed, isNull);
+
+    await tester.enterText(hexField, 'fffffe');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('배경과 비슷해서'), findsOneWidget);
+    await tapLabel(tester, '저장');
+    final categories = await tester.runAsync(repository.listCategories);
+    expect(
+      categories!.singleWhere((category) => category.name == '맞춤 색상').colorHex,
+      '#FFFFFE',
+    );
+  });
+
+  testWidgets('활성 카테고리와 이름이 겹치면 입력란에 오류를 표시해요', (tester) async {
+    await tester.runAsync(
+      () => repository.addCategory(name: 'Travel', colorHex: '#123456'),
+    );
+    await mount(tester, const CategoryBudgetScreen());
+    await tapLabel(tester, '카테고리');
+    await tester.enterText(find.byType(TextFormField), ' TRAVEL ');
+    await tester.pump();
+    await tapLabel(tester, '저장');
+    expect(find.text('이미 있는 카테고리 이름이에요'), findsOneWidget);
+    await tapLabel(tester, '취소');
+
+    await tester.tap(find.byTooltip('카테고리 메뉴').first);
+    await settle(tester);
+    await tapLabel(tester, '수정');
+    await tester.enterText(find.byType(TextFormField), ' travel ');
+    await tapLabel(tester, '저장');
+    expect(find.text('이미 있는 카테고리 이름이에요'), findsOneWidget);
+  });
+
+  for (final choice in [null, '다시 사용', '새로 만들기']) {
+    testWidgets('숨긴 카테고리 확인 선택: ${choice ?? '닫기'}', (tester) async {
+      await SettingsStore().setBudgetAlertsEnabled(true);
+      final hidden = (await tester.runAsync(() async {
+        final category = (await repository.listCategories()).first;
+        final method = (await repository.listPaymentMethods()).first;
+        await repository.addTransaction(
+          TransactionDraft(
+            type: RecordType.expense,
+            occurredAt: DateTime.now(),
+            amount: 1000,
+            categoryId: category.id,
+            paymentMethodId: method.id,
+          ),
+        );
+        await repository.removeCategory(category.id);
+        return category;
+      }))!;
+      await mount(tester, const CategoryBudgetScreen());
+      await tapLabel(tester, '카테고리');
+      await tester.enterText(find.byType(TextFormField), ' ${hidden.name} ');
+      await tester.enterText(hexField, '#654321');
+      await tapLabel(tester, '예산 알림 받기');
+      await tapLabel(tester, '저장');
+      expect(find.text('다시 사용할까요?'), findsOneWidget);
+      expect(find.textContaining('기존 내역 1건과 예산이 함께 돌아와요'), findsOneWidget);
+      if (choice == null) {
+        await tester.tapAt(const Offset(4, 4));
+        await settle(tester);
+      } else {
+        await tapLabel(tester, choice);
+      }
+      expect(find.text('다시 사용할까요?'), findsNothing);
+      final all = (await tester.runAsync(
+        () => repository.listCategories(includeInactive: true),
+      ))!;
+      final matches = all.where((item) => item.name == hidden.name).toList();
+      expect(matches, hasLength(choice == '새로 만들기' ? 2 : 1));
+      expect(matches.first.isActive, choice == '다시 사용');
+      if (choice != null) {
+        final saved = matches.singleWhere((item) => item.isActive);
+        expect(saved.colorHex, '#654321');
+        expect(saved.alertsEnabled, isFalse);
+      }
+    });
+  }
+
+  testWidgets('숨긴 카테고리가 있을 때만 표시하고 다시 사용할 수 있어요', (tester) async {
+    await mount(tester, const CategoryBudgetScreen());
+    final list = find.byType(ListView);
+    await tester.drag(list, const Offset(0, -400));
+    await settle(tester);
+    expect(find.text('숨긴 카테고리'), findsNothing);
+    await tester.runAsync(() async {
+      final category = (await repository.listCategories()).last;
+      await repository.setCategoryActive(category.id, false);
+    });
+    await settle(tester);
+    await tester.drag(list, const Offset(0, -400));
+    await settle(tester);
+    expect(find.text('숨긴 카테고리'), findsOneWidget);
+    expect(find.text('기존 내역 0건'), findsOneWidget);
+    await tapLabel(tester, '다시 사용');
+    expect(find.text('숨긴 카테고리'), findsNothing);
+    expect(await tester.runAsync(repository.listHiddenCategories), isEmpty);
   });
 
   testWidgets('이전 달 거래가 있으면 자동 완료하고 홈을 표시한다', (tester) async {
@@ -116,13 +438,6 @@ void main() {
     expect(find.text('1/4'), findsOneWidget);
     expect(find.byType(OutlinedButton), findsWidgets);
   });
-
-  Future<void> tapLabel(WidgetTester tester, String label) async {
-    final target = find.text(label).last;
-    await tester.ensureVisible(target);
-    await tester.tap(target);
-    await settle(tester);
-  }
 
   Future<void> reachTour(WidgetTester tester, {bool setBudget = false}) async {
     await tapLabel(tester, '시작하기');

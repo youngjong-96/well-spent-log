@@ -1,11 +1,20 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
-  bool _permissionRequested = false;
+  static const _settingsChannel = MethodChannel(
+    'well_spent_log/notification_settings',
+  );
+
+  bool get canOpenNotificationSettings =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  Future<void> openNotificationSettings() =>
+      _settingsChannel.invokeMethod<void>('open');
 
   Future<void> initialize() async {
     if (_initialized || kIsWeb) {
@@ -24,13 +33,14 @@ class NotificationService {
     _initialized = true;
   }
 
-  Future<void> showBudgetAlert({
+  Future<bool> showBudgetAlert({
     required int id,
     required String categoryName,
     required int threshold,
   }) async {
+    if (kIsWeb) return false;
     await initialize();
-    await _requestPermissionOnce();
+    if (!await hasPermission()) return false;
     await _plugin.show(
       id: id,
       title: '$categoryName 예산 알림',
@@ -48,13 +58,33 @@ class NotificationService {
         iOS: DarwinNotificationDetails(),
       ),
     );
+    return true;
   }
 
-  Future<void> _requestPermissionOnce() async {
-    if (_permissionRequested || kIsWeb) {
-      return;
-    }
-    _permissionRequested = true;
+  Future<bool> hasPermission() async {
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android =>
+        await _plugin
+                .resolvePlatformSpecificImplementation<
+                  AndroidFlutterLocalNotificationsPlugin
+                >()
+                ?.areNotificationsEnabled() ==
+            true,
+      TargetPlatform.iOS =>
+        (await _plugin
+                    .resolvePlatformSpecificImplementation<
+                      IOSFlutterLocalNotificationsPlugin
+                    >()
+                    ?.checkPermissions())
+                ?.isEnabled ==
+            true,
+      _ => true,
+    };
+  }
+
+  Future<void> requestPermission() async {
+    if (kIsWeb || await hasPermission()) return;
+    await initialize();
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         await _plugin

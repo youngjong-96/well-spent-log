@@ -90,7 +90,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       HomeScreen(onOpenCategoryDetails: _openCategoryDetails),
       TransactionsScreen(controller: _transactionsController),
       const ReportScreen(),
-      const ManageScreen(),
+      ManageScreen(visible: _selectedIndex == 3),
     ];
     final shell = Scaffold(
       extendBody: true,

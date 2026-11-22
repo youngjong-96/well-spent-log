@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import '../../domain/models/category_colors.dart';
 import 'spending_data.dart';
 
 class AppDatabase {
@@ -26,7 +27,7 @@ class AppDatabase {
     return _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 3,
+        version: 4,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -82,6 +83,10 @@ class AppDatabase {
             if ((await db.rawQuery('PRAGMA foreign_key_check')).isNotEmpty) {
               throw const FormatException('기존 지출 데이터의 연결 정보를 확인해 주세요.');
             }
+          } else if (oldVersion < 4) {
+            await db.execute(
+              'ALTER TABLE categories ADD COLUMN alerts_enabled INTEGER NOT NULL DEFAULT 1',
+            );
           }
         },
       ),
@@ -96,6 +101,7 @@ class AppDatabase {
         color_hex TEXT NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
         is_active INTEGER NOT NULL DEFAULT 1,
+        alerts_enabled INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -186,22 +192,14 @@ class AppDatabase {
 
   Future<void> _seed(Database db) async {
     final now = DateTime.now().toIso8601String();
-    const categories = [
-      ('식비', '#84B6E2'),
-      ('카페/간식', '#294761'),
-      ('교통', '#D8E8F5'),
-      ('생활', '#84B6E2'),
-      ('쇼핑', '#294761'),
-      ('구독/고정비', '#D8E8F5'),
-      ('건강', '#84B6E2'),
-      ('기타', '#294761'),
-    ];
+    const categories = ['식비', '카페/간식', '교통', '생활', '쇼핑', '구독/고정비', '건강', '기타'];
     for (var index = 0; index < categories.length; index++) {
       await db.insert('categories', {
-        'name': categories[index].$1,
-        'color_hex': categories[index].$2,
+        'name': categories[index],
+        'color_hex': categoryColorPresets[index],
         'sort_order': index,
         'is_active': 1,
+        'alerts_enabled': 1,
         'created_at': now,
         'updated_at': now,
       });

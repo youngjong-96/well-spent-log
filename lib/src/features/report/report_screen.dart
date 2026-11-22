@@ -164,14 +164,18 @@ class _MonthlyReport extends ConsumerWidget {
         final dailyLabels = [
           for (final date in dates) '${date.month}/${date.day}',
         ];
-        final categoryTotals = <String, int>{};
+        final categoryTotals = <int?, int>{};
+        final categoryNames = <int?, String>{};
         for (final record in data.transactions) {
-          final category = record.categoryName ?? '미분류';
+          final categoryId = record.categoryId;
+          categoryNames[categoryId] = categoryId == null
+              ? '미분류'
+              : record.categoryName ?? '미분류';
           final amount = record.type == RecordType.refund
               ? -record.amount
               : record.amount;
           categoryTotals.update(
-            category,
+            categoryId,
             (current) => current + amount,
             ifAbsent: () => amount,
           );
@@ -181,7 +185,9 @@ class _MonthlyReport extends ConsumerWidget {
         final categoryAmounts = [
           for (final entry in categoryEntries) entry.value,
         ];
-        final categoryLabels = [for (final entry in categoryEntries) entry.key];
+        final categoryLabels = [
+          for (final entry in categoryEntries) categoryNames[entry.key]!,
+        ];
         final paymentValues = [
           for (final item in data.paymentMethodAmounts) item.amount,
         ];
@@ -315,7 +321,11 @@ class _AnnualReport extends ConsumerWidget {
                     _TableChartView(
                       values: data.categoryTrends[index].monthlyAmounts,
                       labels: List.generate(12, (month) => '${month + 1}월'),
-                      color: colorFromHex(data.categoryTrends[index].colorHex),
+                      color: visibleForeground(
+                        colorFromHex(data.categoryTrends[index].colorHex),
+                        Theme.of(context).scaffoldBackgroundColor,
+                        Theme.of(context).colorScheme.primary,
+                      ),
                       semanticsLabel:
                           '$year년 ${data.categoryTrends[index].name} 월별 지출',
                       dateAxis: true,
